@@ -123,6 +123,62 @@ mypy src/
 
 ---
 
+## Deployment
+
+**Production Server:** 192.168.2.48 (Ubuntu)
+**Service Location:** `/home/cpeddle/service-registry`
+**Virtual Environment:** `.venv` (not `venv`)
+**Service Name:** `service-registry.service`
+
+### Deployment Workflow
+
+**Investigate → Fix → Test → Commit → Deploy**
+
+1. **SSH Access**: `ssh cpeddle@192.168.2.48`
+2. **Investigation**: Debug issues remotely, capture errors
+3. **Fix Locally**: Return to local dev, write tests, fix code
+4. **Commit**: Git commit and push to origin
+5. **Deploy**: SSH to server, `git pull`, `sudo systemctl restart service-registry`
+
+### Important Notes
+
+- ✅ **ALWAYS** fix code locally, never edit on server
+- ✅ **ALWAYS** write tests for bug fixes
+- ✅ **ALWAYS** commit before deploying
+- ❌ **NEVER** make quick fixes directly on production
+- ❌ **NEVER** skip version control
+
+### Service Management
+
+```bash
+# View logs
+sudo journalctl -u service-registry -f
+
+# Restart service
+sudo systemctl restart service-registry
+
+# Check status
+sudo systemctl status service-registry
+
+# Pull latest code
+cd /home/cpeddle/service-registry
+git pull origin master
+```
+
+### Systemd Service Configuration
+
+**Path**: `/etc/systemd/system/service-registry.service`
+**User**: `root` (required for systemctl/ss commands)
+**WorkingDirectory**: `/home/cpeddle/service-registry`
+**Port**: 8000 (Nginx proxies from port 80)
+
+**Critical**: Service needs full PATH including system binaries:
+```
+Environment="PATH=/home/cpeddle/service-registry/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+```
+
+---
+
 ## Notes
 
 Project follows:
@@ -131,3 +187,4 @@ Project follows:
 - KISS (Keep It Simple)
 - YAGNI (You Aren't Gonna Need It)
 - Test-driven development
+- **Remote debugging workflow** (see WAY_OF_WORK.md)

@@ -180,6 +180,106 @@ Example: `feat(auth): add JWT token validation`
 
 ---
 
+## Remote Server Debugging Workflow
+
+When working with code deployed on remote servers, follow this workflow to maintain code quality and version control:
+
+### Investigation Phase (Remote)
+**Purpose**: Diagnose issues on production/staging servers
+
+1. **SSH to Remote Server**: Connect and investigate the issue
+   ```bash
+   ssh user@remote-server
+   ```
+
+2. **Reproduce the Error**: Trigger the issue and capture error messages
+   - Check application logs
+   - Run failing endpoints/commands
+   - Note exact error messages and stack traces
+
+3. **Investigate Root Cause**: Use remote debugging tools
+   - Check service logs: `journalctl -u service-name`
+   - Test components manually
+   - Verify environment configuration
+   - Check file permissions and paths
+
+### Fix Phase (Local)
+**Purpose**: Implement fixes in a controlled, tested environment
+
+4. **Return to Local Development**: Switch to local repository
+   ```bash
+   cd /path/to/local/project
+   ```
+
+5. **Reproduce Locally** (if possible): Verify you can reproduce the issue
+   - Use same test data
+   - Match remote environment conditions
+
+6. **Write/Update Tests**: Add tests that expose the bug
+   - Write failing test first (TDD)
+   - Ensure test catches the exact issue
+
+7. **Implement Fix**: Make code changes locally
+   - Fix the root cause identified remotely
+   - Follow existing code patterns
+   - Keep changes minimal and focused
+
+8. **Verify Tests Pass**: Run full test suite
+   ```bash
+   pytest
+   ```
+
+9. **Commit and Push**: Version control the fix
+   ```bash
+   git add <changed-files>
+   git commit -m "fix: description of bug fix"
+   git push origin master
+   ```
+
+### Deployment Phase (Remote)
+**Purpose**: Apply tested fixes to production
+
+10. **Pull on Remote Server**: Update remote code
+    ```bash
+    ssh user@remote-server
+    cd /path/to/project
+    git pull origin master
+    ```
+
+11. **Restart Services**: Apply changes
+    ```bash
+    sudo systemctl restart service-name
+    ```
+
+12. **Verify Fix**: Confirm issue is resolved
+    - Test the previously failing scenario
+    - Check logs for errors
+    - Monitor for a period
+
+### Key Principles
+
+**✅ DO:**
+- Investigate issues on remote servers to understand context
+- Always fix code in local repository with tests
+- Commit all fixes to version control
+- Pull changes to remote servers via git
+
+**❌ DON'T:**
+- Edit code directly on production/remote servers
+- Make "quick fixes" that bypass version control
+- Skip writing tests for bug fixes
+- Deploy untested changes
+
+### Benefits of This Workflow
+- ✅ All changes tracked in version control
+- ✅ Changes are tested before deployment
+- ✅ Easy to roll back if needed
+- ✅ Team visibility into all changes
+- ✅ Maintains code quality standards
+- ✅ Enables proper code review
+
+---
+
 ## Skill Coordination
 
 This methodology works with specialized Claude skills:
