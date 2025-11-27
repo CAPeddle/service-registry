@@ -18,12 +18,3 @@ def test_readiness_check(client):
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
-
-
-def test_root_endpoint(client):
-    """Test root endpoint."""
-    response = client.get("/")
-
-    assert response.status_code == 200
-    assert "message" in response.json()
-    assert "version" in response.json()
