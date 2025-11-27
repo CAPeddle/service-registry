@@ -1,5 +1,5 @@
 """Service model for database."""
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum
 from src.models.base import Base
@@ -26,5 +26,5 @@ class Service(Base):
     status = Column(SQLEnum(ServiceStatus), nullable=False)
     systemd_state = Column(String, nullable=False)
     last_scanned_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
