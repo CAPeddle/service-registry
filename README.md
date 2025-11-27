@@ -321,6 +321,20 @@ The project follows a layered architecture:
 3. Add API endpoints
 4. Update documentation
 
+### Integrating Services with Registry
+
+**For developers creating new services or modifying existing ones:**
+
+See the comprehensive [Service Integration Guide](docs/SERVICE_INTEGRATION_GUIDE.md) for:
+- Systemd service configuration (recommended)
+- Manual API registration
+- Health check setup
+- Port detection requirements
+- Common integration patterns
+- Troubleshooting tips
+
+This guide is optimized for AI coding assistants (Claude, Copilot) but useful for all developers.
+
 ## Troubleshooting
 
 ### Permission Denied Errors
