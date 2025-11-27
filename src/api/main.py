@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
 from src.api.routes import health, services, scan, pages
+from src.core.database import init_db
 
 app = FastAPI(
     title=settings.app_name,
@@ -12,6 +13,12 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+@app.on_event("startup")
+def startup_event():
+    """Initialize database on startup."""
+    init_db()
 
 # CORS middleware
 app.add_middleware(
