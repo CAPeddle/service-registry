@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
-from src.api.routes import health, services, scan
+from src.api.routes import health, services, scan, pages
 
 app = FastAPI(
     title=settings.app_name,
@@ -26,13 +26,4 @@ app.add_middleware(
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
 app.include_router(services.router, prefix="/api/services", tags=["services"])
 app.include_router(scan.router, prefix="/api/scan", tags=["scan"])
-
-
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {
-        "message": f"Welcome to {settings.app_name}",
-        "version": settings.version,
-        "docs": "/docs"
-    }
+app.include_router(pages.router, tags=["pages"])

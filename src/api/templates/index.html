@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+<a href="/scan" class="btn">Scan for Services</a>
+{% endblock %}
+
+{% block content %}
+{% if services %}
+<table>
+    <thead>
+        <tr>
+            <th>Service Name</th>
+            <th>Status</th>
+            <th>Description</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for service in services %}
+        <tr>
+            <td>
+                <a href="{{ service.base_url }}" target="_blank" class="service-link">
+                    {{ service.name }}
+                </a>
+            </td>
+            <td>
+                <span class="status {{ service.health_status }}"></span>
+                {{ service.health_status }}
+            </td>
+            <td>{{ service.description or '-' }}</td>
+            <td class="actions">
+                <a href="{{ service.base_url }}" target="_blank">Visit</a>
+                {% if service.health_url %}
+                <a href="{{ service.health_url }}" target="_blank">Health</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <p>No configured services found.</p>
+    <p>Click "Scan for Services" to discover services on this server.</p>
+</div>
+{% endif %}
+{% endblock %}
