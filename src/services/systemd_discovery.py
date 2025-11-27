@@ -48,6 +48,11 @@ class SystemdDiscovery:
             parts = line.split()
             if len(parts) >= 4:
                 name = parts[0]
+
+                # Skip header line and non-service entries
+                if name == "UNIT" or not name.endswith(".service"):
+                    continue
+
                 state = parts[2]  # active/inactive/failed
                 description = ' '.join(parts[4:]) if len(parts) > 4 else ""
                 services.append(SystemdService(name=name, state=state, description=description))
