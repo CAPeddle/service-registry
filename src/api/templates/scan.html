@@ -104,6 +104,22 @@
     summary:hover {
         background: #e9ecef;
     }
+    .service-link {
+        color: #007bff;
+        text-decoration: none;
+        font-weight: 500;
+    }
+    .service-link:hover {
+        text-decoration: underline;
+    }
+    .service-link.disabled {
+        color: #999;
+        cursor: not-allowed;
+        text-decoration: none;
+    }
+    .service-link.disabled:hover {
+        text-decoration: none;
+    }
 </style>
 {% endblock %}
 
@@ -123,7 +139,20 @@
         <tbody>
             {% for service in discovered %}
             <tr>
-                <td>{{ service.name }}</td>
+                <td>
+                    {% if service.port %}
+                    <a href="http://{{ host }}:{{ service.port }}"
+                       target="_blank"
+                       class="service-link">
+                        {{ service.name }}
+                    </a>
+                    {% else %}
+                    <span class="service-link disabled"
+                          title="No port detected - cannot construct URL">
+                        {{ service.name }}
+                    </span>
+                    {% endif %}
+                </td>
                 <td>{{ service.port or '-' }}</td>
                 <td>{{ service.systemd_state }}</td>
                 <td>
@@ -155,7 +184,20 @@
             <tbody>
                 {% for service in all_services %}
                 <tr>
-                    <td>{{ service.name }}</td>
+                    <td>
+                        {% if service.port %}
+                        <a href="http://{{ host }}:{{ service.port }}"
+                           target="_blank"
+                           class="service-link">
+                            {{ service.name }}
+                        </a>
+                        {% else %}
+                        <span class="service-link disabled"
+                              title="No port detected - cannot construct URL">
+                            {{ service.name }}
+                        </span>
+                        {% endif %}
+                    </td>
                     <td>{{ service.status }}</td>
                     <td>{{ service.systemd_state }}</td>
                     <td>
