@@ -1,4 +1,5 @@
 """HTML page routes."""
+import re
 from fastapi import APIRouter, Depends, Request
 from fastapi.templating import Jinja2Templates
 from src.models.service import ServiceStatus
@@ -9,6 +10,22 @@ from src.api.dependencies.services import get_registry_service
 
 router = APIRouter()
 templates = Jinja2Templates(directory="src/api/templates")
+
+
+def get_safe_hostname(request: Request) -> str:
+    """Extract and sanitize hostname from request headers.
+
+    Returns only alphanumeric characters, dots, hyphens, and underscores.
+    Fallback to 'localhost' if invalid.
+    """
+    host_header = request.headers.get("host", "localhost")
+    # Remove port if present
+    hostname = host_header.split(":")[0]
+    # Only allow valid hostname characters: letters, numbers, dots, hyphens
+    # This prevents injection of newlines, carriage returns, or other control chars
+    if re.match(r'^[a-zA-Z0-9.\-_]+$', hostname):
+        return hostname
+    return "localhost"
 
 
 @router.get("/")
@@ -45,7 +62,7 @@ def index(
         {
             "request": request,
             "services": service_data,
-            "host": request.headers.get("host", "localhost").split(":")[0]
+            "host": get_safe_hostname(request)
         }
     )
 
@@ -69,6 +86,6 @@ def scan_page(
             "request": request,
             "discovered": discovered,
             "all_services": all_services,
-            "host": request.headers.get("host", "localhost").split(":")[0]
+            "host": get_safe_hostname(request)
         }
     )
