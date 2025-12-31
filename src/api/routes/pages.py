@@ -35,13 +35,18 @@ def index(
             "name": service.name,
             "description": service.description,
             "base_url": service.base_url,
+            "port": service.port,
             "health_url": health_url,
             "health_status": health_status
         })
 
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "services": service_data}
+        {
+            "request": request,
+            "services": service_data,
+            "host": request.url.hostname
+        }
     )
 
 
@@ -63,6 +68,7 @@ def scan_page(
         {
             "request": request,
             "discovered": discovered,
-            "all_services": all_services
+            "all_services": all_services,
+            "host": request.url.hostname
         }
     )
