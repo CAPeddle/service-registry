@@ -45,7 +45,7 @@ def index(
         {
             "request": request,
             "services": service_data,
-            "host": request.url.hostname
+            "host": request.headers.get("host", "localhost").split(":")[0]
         }
     )
 
@@ -69,6 +69,6 @@ def scan_page(
             "request": request,
             "discovered": discovered,
             "all_services": all_services,
-            "host": request.url.hostname
+            "host": request.headers.get("host", "localhost").split(":")[0]
         }
     )
