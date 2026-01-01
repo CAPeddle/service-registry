@@ -28,13 +28,25 @@ def get_service(service_id: int, db: Session = Depends(get_db)):
 
 @router.post("", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
 def create_service(service_data: ServiceCreate, db: Session = Depends(get_db)):
-    """Create a new service."""
+    """Create a new service or update an existing discovered service."""
     # Check if service already exists
     existing = db.query(Service).filter(Service.name == service_data.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Service already exists")
+        # If service is already configured, reject as duplicate
+        if existing.status == ServiceStatus.CONFIGURED:
+            raise HTTPException(status_code=400, detail="Service already exists")
 
-    # Create service
+        # Update discovered service with configuration
+        existing.description = service_data.description
+        existing.port = service_data.port
+        existing.health_endpoint = service_data.health_endpoint
+        existing.base_url = service_data.base_url
+        existing.status = ServiceStatus.CONFIGURED
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    # Create new service
     service = Service(
         name=service_data.name,
         description=service_data.description,

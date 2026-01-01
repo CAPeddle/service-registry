@@ -106,3 +106,54 @@ def test_delete_service(client):
     # Verify deleted
     get_response = client.get(f"/api/services/{service_id}")
     assert get_response.status_code == 404
+
+
+def test_configure_discovered_service(client):
+    """Test configuring a discovered service should update it, not reject it."""
+    from sqlalchemy.orm import Session
+    from src.models.base import get_db
+
+    # Simulate a discovered service (like from a scan) by directly inserting into DB
+    # We need to use the same database session that the API uses
+    def override_get_db():
+        try:
+            db = next(get_db())
+            # Create the discovered service
+            discovered_service = Service(
+                name="finance-tracker.service",
+                description=None,
+                port=8001,
+                base_url=None,
+                health_endpoint=None,
+                status=ServiceStatus.DISCOVERED,
+                systemd_state="active"
+            )
+            db.add(discovered_service)
+            db.commit()
+            db.refresh(discovered_service)
+            service_id = discovered_service.id
+            yield db, service_id
+        finally:
+            db.close()
+
+    db, service_id = next(override_get_db())
+
+    # User tries to configure it via the UI (POST to /api/services)
+    configure_data = {
+        "name": "finance-tracker.service",
+        "description": "Finance Tracker Application",
+        "base_url": "http://192.168.2.48:8001",
+        "port": 8001,
+        "health_endpoint": "/health"
+    }
+
+    response = client.post("/api/services", json=configure_data)
+
+    # Should succeed and update the existing service
+    assert response.status_code == 201
+    json_data = response.json()
+    assert json_data["name"] == "finance-tracker.service"
+    assert json_data["description"] == "Finance Tracker Application"
+    assert json_data["base_url"] == "http://192.168.2.48:8001"
+    assert json_data["status"] == "configured"
+    assert json_data["id"] == service_id  # Same ID, updated not created
