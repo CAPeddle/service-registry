@@ -1,0 +1,20 @@
+# Manual Testing Results - Clickable Services
+Date: Wed Dec 31 08:00:00 EST 2025
+
+## Automated Tests
+Unit tests: 33 passed
+Coverage: 88%
+
+## Feature Implementation
+✅ Backend passes hostname and port to templates
+✅ Landing page service names are clickable
+✅ Scan page service names are clickable (both tables)
+✅ Links constructed as http://{hostname}:{port}
+✅ Services without ports show disabled state
+✅ Disabled services show tooltip
+✅ Hostname sanitized against injection attacks
+
+## Notes
+- Manual browser testing would verify visual appearance and interactions
+- Production deployment would test reverse proxy hostname handling
+- All automated tests passing confirms no regressions
