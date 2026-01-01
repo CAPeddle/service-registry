@@ -1,0 +1,47 @@
+# Testing Results - Clickable Services Feature
+
+Date: 2026-01-01
+
+## Automated Tests
+
+**Existing Test Suite:**
+- Unit tests: 33 passed (0 failures)
+- Coverage: 88% overall
+- Status: ✅ No regressions introduced
+
+**Note:** The existing test suite covers background functionality but does NOT include automated tests for the new clickable services feature. The pages routes (`src/api/routes/pages.py`) have 41% coverage.
+
+## Feature Implementation Checklist
+
+The following features were implemented and verified through code review:
+
+✅ Backend passes sanitized hostname and port to templates
+✅ Landing page service names are clickable links
+✅ Scan page service names are clickable (both tables)
+✅ Links constructed as http://{hostname}:{port}
+✅ Services without ports show disabled state with tooltip
+✅ Hostname sanitized against header injection attacks
+
+## Manual Testing Required
+
+The following aspects require manual browser testing:
+
+- [ ] Visual appearance of clickable links (blue color, hover underline)
+- [ ] Clicking service names opens new tab with correct URL
+- [ ] Services without ports show grayed-out disabled state
+- [ ] Tooltip appears on hover for disabled services
+- [ ] Links work correctly when accessed via different hostnames (localhost, IP, domain)
+- [ ] Reverse proxy hostname handling (Nginx production deployment)
+
+## Recommendations
+
+- Add automated integration tests for pages routes to verify URL construction
+- Add tests for hostname sanitization edge cases
+- Consider adding Playwright/Selenium tests for end-to-end browser validation
+
+## Summary
+
+✅ No regressions in existing functionality (33 tests passing)
+⚠️  New feature requires manual browser testing to verify
+✅ Code review approved all implementations
+✅ Security fix applied (hostname sanitization)

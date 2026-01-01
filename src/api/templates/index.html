@@ -19,9 +19,18 @@
         {% for service in services %}
         <tr>
             <td>
-                <a href="{{ service.base_url }}" target="_blank" class="service-link">
+                {% if service.port %}
+                <a href="http://{{ host }}:{{ service.port }}"
+                   target="_blank"
+                   class="service-link">
                     {{ service.name }}
                 </a>
+                {% else %}
+                <span class="service-link disabled"
+                      title="No port detected - cannot construct URL">
+                    {{ service.name }}
+                </span>
+                {% endif %}
             </td>
             <td>
                 <span class="status {{ service.health_status }}"></span>
