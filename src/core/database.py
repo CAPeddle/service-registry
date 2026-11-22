@@ -1,12 +1,62 @@
 """Database initialization and utilities."""
-from src.models.base import Base, engine
+import pwd
+from pathlib import Path
+from typing import Callable, Optional
+
+from sqlalchemy import inspect, text
+from sqlalchemy.engine import Engine
+
+from src.models.base import Base, engine as default_engine
+
+USER_UID = 1000
+# The service runs as root, so look in the household user's home, not root's.
+_USER_UNIT_DIRS = (
+    Path(pwd.getpwuid(USER_UID).pw_dir) / ".config" / "systemd" / "user",
+    Path("/etc/systemd/user"),
+    Path("/usr/lib/systemd/user"),
+)
 
 
-def init_db():
-    """Initialize database by creating all tables."""
+def user_unit_exists(name: str) -> bool:
+    """Return True if a systemd user unit with this name is installed."""
+    return any((d / name).is_file() for d in _USER_UNIT_DIRS)
+
+
+def import_configured_services(engine: Engine, unit_exists: Callable[[str], bool]) -> None:
+    """Copy CONFIGURED rows of the old services table into annotations, once.
+
+    Runs only when the annotations table is empty and the services table exists.
+    """
+    inspector = inspect(engine)
+    if not inspector.has_table("services"):
+        return
+    with engine.begin() as conn:
+        if conn.execute(text("SELECT COUNT(*) FROM annotations")).scalar():
+            return
+        rows = conn.execute(text(
+            "SELECT name, description, health_endpoint, systemd_state FROM services "
+            "WHERE status = 'CONFIGURED'"
+        )).all()
+        for name, description, health, systemd_state in rows:
+            if systemd_state != "unknown":
+                key = f"system:{name}"
+            elif unit_exists(name):
+                key = f"user:{USER_UID}:{name}"
+            else:
+                key = f"manual:{name}"
+            conn.execute(text(
+                "INSERT INTO annotations (identity_key, description, health_path, hidden, created_at, updated_at) "
+                "VALUES (:key, :description, :health, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ), {"key": key, "description": description, "health": health})
+
+
+def init_db(engine: Optional[Engine] = None, user_unit_exists: Callable[[str], bool] = user_unit_exists):
+    """Initialize database by creating all tables and importing old entries."""
+    engine = engine or default_engine
     Base.metadata.create_all(bind=engine)
+    import_configured_services(engine, user_unit_exists)
 
 
 def drop_db():
     """Drop all database tables."""
-    Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=default_engine)
