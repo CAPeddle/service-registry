@@ -5,6 +5,7 @@ from src.models.base import get_db
 from src.services.systemd_discovery import SystemdDiscovery
 from src.services.port_detection import PortDetection
 from src.services.registry_service import RegistryService
+from src.services.health_check import HealthCheckService, shared_health_check_service
 
 
 def get_systemd_discovery() -> SystemdDiscovery:
@@ -24,3 +25,8 @@ def get_registry_service(
 ) -> RegistryService:
     """Get registry service instance."""
     return RegistryService(db, systemd, port_detector)
+
+
+def get_health_check_service() -> HealthCheckService:
+    """Get the shared health check service (its caches persist across requests)."""
+    return shared_health_check_service
