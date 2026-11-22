@@ -223,8 +223,6 @@
 {% block scripts %}
 <script>
 (function () {
-    // Row values arrive only through data-* attributes (element.dataset), never
-    // through markup-interpolated script, so stored names cannot become code.
     var modal = document.getElementById('edit-modal');
     var form = document.getElementById('edit-form');
     var errorBox = document.getElementById('edit-error');
@@ -318,8 +316,6 @@
 
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
-        // Send only what the user changed, so the shown defaults (the detected
-        // name, the lowest port) are not stored as choices.
         var values = {
             display_name: field('edit-display-name').value,
             description: field('edit-description').value,

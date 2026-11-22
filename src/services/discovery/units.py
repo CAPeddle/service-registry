@@ -16,8 +16,8 @@ _PROPERTIES = ("-p", "Description", "-p", "ActiveState", "-p", "LoadState")
 @dataclass(frozen=True)
 class UnitStatus:
     description: str
-    active_state: str  # active, inactive, failed, activating, ...
-    load_state: str  # loaded, not-found, masked, ...
+    active_state: str
+    load_state: str
 
     @property
     def state(self) -> str:

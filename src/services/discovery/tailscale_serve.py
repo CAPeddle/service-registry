@@ -20,9 +20,9 @@ SERVE_ARGV = ("tailscale", "serve", "status", "--json")
 
 @dataclass(frozen=True)
 class ServeMapping:
-    front_port: int  # the port tailscaled listens on
+    front_port: int
     url: str  # e.g. "https://z2.example.ts.net/" or "http://z2.example.ts.net:8765/"
-    target_host: str  # as written in the proxy, "127.0.0.1" for a bare port
+    target_host: str
     target_port: int
 
 

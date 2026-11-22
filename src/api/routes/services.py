@@ -61,11 +61,8 @@ def update_annotation(update: AnnotationUpdate, db: Session = Depends(get_db)):
 @router.delete("/annotation", status_code=status.HTTP_204_NO_CONTENT)
 def delete_annotation(identity_key: str = Query(..., min_length=1), db: Session = Depends(get_db)):
     """Remove the annotation for one identity key."""
-    annotation = AnnotationRepository(db).get(identity_key)
-    if annotation is None:
+    if not AnnotationRepository(db).delete(identity_key):
         raise HTTPException(status_code=404, detail="Annotation not found")
-    db.delete(annotation)
-    db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -75,8 +72,6 @@ def _names(row: InventoryRow) -> set[str]:
     if origin in ("system", "user"):
         return {rest.rsplit(":", 1)[-1]}
     if origin == "docker":
-        # docker:<project>/<service>, or docker:<container name>. The display
-        # name is the container name unless the user renamed the row.
         return {rest, rest.rsplit("/", 1)[-1], row.display_name}
     return set()
 

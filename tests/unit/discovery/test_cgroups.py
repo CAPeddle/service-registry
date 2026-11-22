@@ -28,8 +28,6 @@ def test_tmux_scope_under_user_manager_is_unattributed(fixture_text):
 
 
 def test_docker_proxy_maps_to_docker_service(fixture_text):
-    # The docker published-port map, not this result, is what names the
-    # container; this only records where the process really lives.
     assert parse_cgroup(fixture_text("cgroup-docker-proxy.txt")) == UnitRef(
         scope="system", unit="docker.service", uid=None
     )

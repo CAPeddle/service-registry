@@ -46,5 +46,4 @@ def test_parser_failure_returns_error_not_exception():
 
 
 def test_command_sees_a_closed_stdin():
-    # A command that waits for input must not hang the request.
     assert run_source("demo", ("cat",), _parse_upper, timeout=1) == ""

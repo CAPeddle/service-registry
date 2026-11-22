@@ -24,7 +24,7 @@ _USER_MANAGER = re.compile(r"user@(\d+)\.service")
 class UnitRef:
     scope: Literal["system", "user"]
     unit: str
-    uid: int | None  # set for user units only
+    uid: int | None
 
 
 @dataclass(frozen=True)

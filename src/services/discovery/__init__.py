@@ -62,5 +62,5 @@ def parse_source(source: str, parse: Callable[[str], T], text: str) -> T | Sourc
     """Apply ``parse`` to ``text``, reporting a parser failure as a SourceError."""
     try:
         return parse(text)
-    except Exception as exc:  # a parser bug must not escape into the request
+    except Exception as exc:
         return SourceError(source, f"unreadable output: {exc}")

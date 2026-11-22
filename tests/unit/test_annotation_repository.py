@@ -1,18 +1,11 @@
 """Tests for the annotation repository."""
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from src.models.base import Base
 from src.repositories.annotation_repository import AnnotationRepository
 
 
 @pytest.fixture
-def repo():
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(bind=engine)
-    session = sessionmaker(bind=engine)()
-    yield AnnotationRepository(session)
-    session.close()
+def repo(db_session):
+    yield AnnotationRepository(db_session)
 
 
 def test_upsert_existing_key_updates_in_place(repo):
@@ -43,3 +36,11 @@ def test_new_annotation_leaves_hidden_unset(repo):
     annotation = repo.upsert("docker:media/plex", description="Plex")
 
     assert annotation.hidden is None
+
+
+def test_delete_removes_the_annotation_and_reports_whether_it_existed(repo):
+    repo.upsert("docker:media/plex", description="Plex")
+
+    assert repo.delete("docker:media/plex") is True
+    assert repo.get("docker:media/plex") is None
+    assert repo.delete("docker:media/plex") is False

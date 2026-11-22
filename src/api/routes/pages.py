@@ -35,7 +35,6 @@ _HOSTNAME = re.compile(r"[a-zA-Z0-9.\-_]+")
 _BRACKETED = re.compile(r"\[([0-9a-fA-F:.]+)\](?::\d+)?")
 
 GROUP_HIDDEN = "hidden"
-# Display order; the unknown group is only shown when it has rows.
 GROUP_TITLES = {
     GROUP_UNKNOWN: "Unknown",
     GROUP_LAN: "Web (LAN)",
@@ -77,7 +76,7 @@ def get_safe_hostname(request: Request) -> str:
 
 @dataclass
 class PathView:
-    text: str  # host:port, shown when there is no link
+    text: str
     href: Optional[str]
     reach: str
     label: str
@@ -86,7 +85,7 @@ class PathView:
 @dataclass
 class RowView:
     row: InventoryRow
-    href: Optional[str]  # the row's main link
+    href: Optional[str]
     paths: list[PathView]
     health: str
 
@@ -96,7 +95,7 @@ class GroupView:
     key: str
     title: str
     rows: list[RowView]
-    others: list[RowView]  # "other processes", shown inside the hidden group
+    others: list[RowView]
 
 
 @router.get("/")

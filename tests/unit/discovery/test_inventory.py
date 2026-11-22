@@ -1,4 +1,5 @@
 """Tests for turning discovery source results and annotations into page rows."""
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -84,6 +85,28 @@ def make_sources(
 
 def inventory_for(annotations=(), **source_data):
     return build_inventory(collect_snapshot(make_sources(**source_data)), annotations)
+
+
+def test_collect_snapshot_reads_independent_sources_concurrently():
+    def slow(value):
+        def read():
+            time.sleep(0.3)
+            return value
+
+        return read
+
+    sources = Sources(
+        list_sockets=slow([]),
+        list_published_ports=slow({}),
+        list_serve_mappings=slow([]),
+        read_firewall=slow(LanFirewall(active=True, admitted=())),
+    )
+
+    started = time.monotonic()
+    snapshot = collect_snapshot(sources)
+
+    assert time.monotonic() - started < 0.8
+    assert snapshot.sockets == [] and snapshot.docker == {} and snapshot.serve == []
 
 
 def paths(row):
@@ -462,6 +485,7 @@ def test_repeated_unit_failures_are_reported_once_per_source():
     )
 
     assert [e.source for e in inventory.errors] == ["units"]
+    assert len(inventory.errors) == len({e.source for e in inventory.errors})
 
 
 class CountingSources:

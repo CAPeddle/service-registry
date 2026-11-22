@@ -122,7 +122,6 @@ class HealthCheckService:
         except httpx.TimeoutException:
             return None
         except httpx.HTTPError:
-            # Refused, reset or non-HTTP bytes: nothing speaking HTTP here
             is_http = False
         self._http_cache[port] = (time.monotonic(), is_http)
         return is_http
@@ -200,5 +199,4 @@ class HealthCheckService:
         return f"{base}{endpoint}"
 
 
-# Shared instance so probe caches survive across page loads
 shared_health_check_service = HealthCheckService()

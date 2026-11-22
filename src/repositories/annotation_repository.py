@@ -7,7 +7,7 @@ _FIELDS = ("display_name", "description", "hidden", "link_override", "health_pat
 
 
 class AnnotationRepository:
-    """Get, upsert, list and hide annotations by identity key."""
+    """Get, upsert, list, hide and delete annotations by identity key."""
 
     def __init__(self, session: Session):
         self.session = session
@@ -31,6 +31,14 @@ class AnnotationRepository:
         self.session.commit()
         self.session.refresh(annotation)
         return annotation
+
+    def delete(self, identity_key: str) -> bool:
+        annotation = self.get(identity_key)
+        if annotation is None:
+            return False
+        self.session.delete(annotation)
+        self.session.commit()
+        return True
 
     def set_hidden(self, identity_key: str, hidden: bool) -> Annotation:
         return self.upsert(identity_key, hidden=hidden)

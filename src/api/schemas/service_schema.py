@@ -1,8 +1,18 @@
 """Pydantic schemas for service API."""
-from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
-from src.models.service import ServiceStatus
+
+
+def _require_http_url(v: str) -> str:
+    if not v.startswith(("http://", "https://")):
+        raise ValueError("URL must start with http:// or https://")
+    return v
+
+
+def _require_leading_slash(v: str, label: str) -> str:
+    if not v.startswith("/"):
+        raise ValueError(f"{label} must start with /")
+    return v
 
 
 class ServiceBase(BaseModel):
@@ -25,34 +35,13 @@ class ServiceCreate(ServiceBase):
     @classmethod
     def validate_url(cls, v: str) -> str:
         """Validate URL format."""
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
-        return v
+        return _require_http_url(v)
 
     @field_validator("health_endpoint")
     @classmethod
     def validate_health_endpoint(cls, v: Optional[str]) -> Optional[str]:
         """Validate health endpoint format."""
-        if v is not None and not v.startswith("/"):
-            raise ValueError("Health endpoint must start with /")
-        return v
-
-
-class ServiceUpdate(BaseModel):
-    """Schema for updating a service."""
-
-    description: Optional[str] = None
-    port: Optional[int] = Field(None, ge=1, le=65535)
-    health_endpoint: Optional[str] = None
-    base_url: Optional[str] = None
-
-    @field_validator("base_url")
-    @classmethod
-    def validate_url(cls, v: Optional[str]) -> Optional[str]:
-        """Validate URL format."""
-        if v is not None and not v.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
-        return v
+        return v if v is None else _require_leading_slash(v, "Health endpoint")
 
 
 def _blank_to_none(v: Optional[str]) -> Optional[str]:
@@ -85,17 +74,13 @@ class AnnotationUpdate(BaseModel):
     @classmethod
     def validate_link(cls, v: Optional[str]) -> Optional[str]:
         v = _blank_to_none(v)
-        if v is not None and not v.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
-        return v
+        return v if v is None else _require_http_url(v)
 
     @field_validator("health_path")
     @classmethod
     def validate_health_path(cls, v: Optional[str]) -> Optional[str]:
         v = _blank_to_none(v)
-        if v is not None and not v.startswith("/"):
-            raise ValueError("Health path must start with /")
-        return v
+        return v if v is None else _require_leading_slash(v, "Health path")
 
 
 class AnnotationResponse(BaseModel):
@@ -108,18 +93,5 @@ class AnnotationResponse(BaseModel):
     link_override: Optional[str] = None
     health_path: Optional[str] = None
     primary_port: Optional[int] = None
-
-    model_config = {"from_attributes": True}
-
-
-class ServiceResponse(ServiceBase):
-    """Schema for service response."""
-
-    id: int
-    status: ServiceStatus
-    systemd_state: str
-    last_scanned_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
 
     model_config = {"from_attributes": True}

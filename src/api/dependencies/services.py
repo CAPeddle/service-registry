@@ -8,7 +8,7 @@ from src.services.discovery.inventory import InventoryService, shared_source_cac
 
 
 def get_health_check_service() -> HealthCheckService:
-    """Get the shared health check service (its caches persist across requests)."""
+    """Get the shared health check service."""
     return shared_health_check_service
 
 

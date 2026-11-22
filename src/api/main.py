@@ -20,9 +20,6 @@ def startup_event():
     init_db()
 
 
-# No CORS middleware: the page's own scripts are same-origin and registrations
-# come from servers, so no browser on another origin may call the write API.
-
 # Include routers
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
 app.include_router(services.router, prefix="/api/services", tags=["services"])

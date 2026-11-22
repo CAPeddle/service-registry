@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Protocol
 from urllib.parse import urlsplit
@@ -43,7 +44,6 @@ from .sockets import ListeningSocket
 from .tailscale_serve import ServeMapping
 from .units import UnitStatus
 
-# How an access path reaches the service.
 LAN = "lan"
 LAN_BLOCKED = "lan_blocked"
 TAILNET = "tailnet"
@@ -68,18 +68,17 @@ _TAILNET_NETWORKS = (
 _TAILNET_INTERFACE = "tailscale0"
 _LAN_NETWORK = ipaddress.ip_network(firewall.DEFAULT_LAN_SUBNET)
 
-# Default suppression list.
 _NOISE_PORTS = frozenset({22, 53})
 _NOISE_PORTS_BY_IDENTITY = {
     "system:nginx.service": frozenset({80}),
-    "system:service-registry.service": frozenset({8000}),  # this app
+    "system:service-registry.service": frozenset({8000}),
 }
 _TAILSCALED_KEY = "system:tailscaled.service"  # what remains are its peerapi ports
 
 
 @dataclass(frozen=True)
 class Sources:
-    """The discovery sources, swappable so tests can feed captured output."""
+    """The discovery sources."""
 
     list_sockets: Callable[[], list[ListeningSocket] | SourceError] = sockets.list_sockets
     read_cgroup: Callable[[int], UnitRef | Unattributed | SourceError] = cgroups.read_cgroup
@@ -113,18 +112,25 @@ class SourceSnapshot:
 
 
 def collect_snapshot(sources: Sources) -> SourceSnapshot:
-    listening = sources.list_sockets()
-    pids = (
-        set() if isinstance(listening, SourceError) else {pid for s in listening for pid in s.pids}
-    )
-    return SourceSnapshot(
-        sockets=listening,
-        cgroups={pid: sources.read_cgroup(pid) for pid in sorted(pids)},
-        docker=sources.list_published_ports(),
-        serve=sources.list_serve_mappings(),
-        firewall=sources.read_firewall(),
-        show_unit=sources.show_unit,
-    )
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        sockets_future = pool.submit(sources.list_sockets)
+        docker_future = pool.submit(sources.list_published_ports)
+        serve_future = pool.submit(sources.list_serve_mappings)
+        firewall_future = pool.submit(sources.read_firewall)
+        listening = sockets_future.result()
+        pids = (
+            set()
+            if isinstance(listening, SourceError)
+            else {pid for s in listening for pid in s.pids}
+        )
+        return SourceSnapshot(
+            sockets=listening,
+            cgroups={pid: sources.read_cgroup(pid) for pid in sorted(pids)},
+            docker=docker_future.result(),
+            serve=serve_future.result(),
+            firewall=firewall_future.result(),
+            show_unit=sources.show_unit,
+        )
 
 
 @dataclass(frozen=True)
@@ -155,12 +161,11 @@ class InventoryRow:
     identity_key: str
     display_name: str
     description: str | None
-    origin: str  # system, user, docker, manual or other
-    # running, running without a port, failed, inactive, not found, not running, unknown, ...
+    origin: str
     state: str
     group: str
     hidden: bool
-    suppressed: bool  # on the default suppression list
+    suppressed: bool
     access_paths: tuple[AccessPath, ...]
     primary_port: int | None
     health_path: str | None
@@ -170,7 +175,7 @@ class InventoryRow:
 @dataclass
 class Inventory:
     rows: list[InventoryRow]
-    errors: list[SourceError]  # at most one per failed source
+    errors: list[SourceError]
 
     def row(self, identity_key: str) -> InventoryRow | None:
         return next((r for r in self.rows if r.identity_key == identity_key), None)
@@ -437,7 +442,7 @@ def _absent_row(
         origin=origin,
         state=state,
         group=group,
-        hidden=bool(note.hidden),  # rows built from annotations are never suppressed
+        hidden=bool(note.hidden),
         suppressed=False,
         access_paths=(),
         primary_port=note.primary_port,
