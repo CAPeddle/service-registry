@@ -84,7 +84,7 @@ service_registry/
 - All 13 planned tasks completed
 - Core features fully implemented
 - Comprehensive documentation
-- Deployed to production server (192.168.2.48)
+- Running and actively developed on the production server
 
 **Recent Work:**
 - ✅ Complete implementation of all core features
@@ -150,18 +150,16 @@ mypy src/
 
 **Investigate → Fix → Test → Commit → Deploy**
 
-1. **SSH Access**: `ssh cpeddle@192.168.2.48`
-2. **Investigation**: Debug issues remotely, capture errors
-3. **Fix Locally**: Return to local dev, write tests, fix code
-4. **Commit**: Git commit and push to origin
-5. **Deploy**: SSH to server, `git pull`, `sudo systemctl restart service-registry`
+1. **Investigation**: Debug issues , capture errors
+2. **Fix**: Write tests, fix code
+3. **Commit**: Git commit and push to origin
+4. **Deploy**: sudo systemctl restart service-registry`
 
 ### Important Notes
 
-- ✅ **ALWAYS** fix code locally, never edit on server
 - ✅ **ALWAYS** write tests for bug fixes
-- ✅ **ALWAYS** commit before deploying
-- ❌ **NEVER** make quick fixes directly on production
+- ✅ **ALWAYS** commit 
+- ❌ **NEVER** make quick fixes 
 - ❌ **NEVER** skip version control
 
 ### Service Management
