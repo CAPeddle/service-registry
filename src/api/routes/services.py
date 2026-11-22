@@ -1,94 +1,89 @@
-"""Service management API routes."""
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from src.models.base import get_db
-from src.models.service import Service, ServiceStatus
-from src.api.schemas.service_schema import ServiceCreate, ServiceUpdate, ServiceResponse
+"""Service management API: annotations keyed by identity.
 
+A registration names a service; it is matched against the live inventory and
+recorded as that identity's annotation. Edits from the landing page address an
+annotation by its identity key directly. Identity keys contain ':' and '/', so
+they travel in the JSON body or the query string, never in a path segment.
+"""
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy.orm import Session
+
+from src.api.dependencies.services import get_inventory_service
+from src.api.schemas.service_schema import AnnotationResponse, AnnotationUpdate, ServiceCreate
+from src.models.base import get_db
+from src.repositories.annotation_repository import AnnotationRepository
+from src.services.discovery.inventory import InventoryRow, InventoryService
 
 router = APIRouter()
 
 
-@router.get("", response_model=List[ServiceResponse])
-def list_services(db: Session = Depends(get_db)):
-    """List all services."""
-    services = db.query(Service).all()
-    return services
+@router.get("", response_model=List[AnnotationResponse])
+def list_annotations(db: Session = Depends(get_db)):
+    """List every annotation."""
+    return AnnotationRepository(db).list()
 
 
-@router.get("/{service_id}", response_model=ServiceResponse)
-def get_service(service_id: int, db: Session = Depends(get_db)):
-    """Get a service by ID."""
-    service = db.query(Service).filter(Service.id == service_id).first()
-    if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
-    return service
-
-
-@router.post("", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
-def create_service(service_data: ServiceCreate, db: Session = Depends(get_db)):
-    """Create a new service or update an existing discovered service."""
-    # Check if service already exists
-    existing = db.query(Service).filter(Service.name == service_data.name).first()
-    if existing:
-        # If service is already configured, reject as duplicate
-        if existing.status == ServiceStatus.CONFIGURED:
-            raise HTTPException(status_code=400, detail="Service already exists")
-
-        # Update discovered service with configuration
-        existing.description = service_data.description
-        existing.port = service_data.port
-        existing.health_endpoint = service_data.health_endpoint
-        existing.base_url = service_data.base_url
-        existing.status = ServiceStatus.CONFIGURED
-        db.commit()
-        db.refresh(existing)
-        return existing
-
-    # Create new service
-    service = Service(
-        name=service_data.name,
-        description=service_data.description,
-        port=service_data.port,
-        health_endpoint=service_data.health_endpoint,
-        base_url=service_data.base_url,
-        status=ServiceStatus.CONFIGURED,
-        systemd_state="unknown"
-    )
-    db.add(service)
-    db.commit()
-    db.refresh(service)
-    return service
-
-
-@router.put("/{service_id}", response_model=ServiceResponse)
-def update_service(
-    service_id: int,
-    service_data: ServiceUpdate,
-    db: Session = Depends(get_db)
+@router.post("", response_model=AnnotationResponse, status_code=status.HTTP_201_CREATED)
+def register_service(
+    service_data: ServiceCreate,
+    db: Session = Depends(get_db),
+    inventory: InventoryService = Depends(get_inventory_service),
 ):
-    """Update a service."""
-    service = db.query(Service).filter(Service.id == service_id).first()
-    if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
+    """Record a registration as an annotation.
 
-    # Update fields
-    update_data = service_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(service, field, value)
+    A name matching a discovered service annotates that service with the
+    description and health path. Its base_url is not stored: registrations
+    typically send a loopback or old-host URL, and the page builds links from
+    the visitor's address. A name matching nothing becomes ``manual:<name>``,
+    whose only link is the base_url.
+    """
+    repo = AnnotationRepository(db)
+    name = service_data.name
+    key = _match_inventory(inventory.get().rows, name) or _match_annotation(repo, name)
+    fields = {"description": service_data.description, "health_path": service_data.health_endpoint}
+    if key is None:
+        key = f"manual:{name}"
+    if key.startswith("manual:"):
+        fields["link_override"] = service_data.base_url
+    return repo.upsert(key, **fields)
 
+
+@router.put("/annotation", response_model=AnnotationResponse)
+def update_annotation(update: AnnotationUpdate, db: Session = Depends(get_db)):
+    """Create or change the annotation for one identity key; omitted fields are unchanged."""
+    fields = update.model_dump(exclude_unset=True)
+    key = fields.pop("identity_key")
+    return AnnotationRepository(db).upsert(key, **fields)
+
+
+@router.delete("/annotation", status_code=status.HTTP_204_NO_CONTENT)
+def delete_annotation(identity_key: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    """Remove the annotation for one identity key."""
+    annotation = AnnotationRepository(db).get(identity_key)
+    if annotation is None:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    db.delete(annotation)
     db.commit()
-    db.refresh(service)
-    return service
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_service(service_id: int, db: Session = Depends(get_db)):
-    """Delete a service."""
-    service = db.query(Service).filter(Service.id == service_id).first()
-    if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
+def _names(row: InventoryRow) -> set[str]:
+    """The names a registration may use for a discovered row."""
+    origin, _, rest = row.identity_key.partition(":")
+    if origin in ("system", "user"):
+        return {rest.rsplit(":", 1)[-1]}
+    if origin == "docker":
+        # docker:<project>/<service>, or docker:<container name>. The display
+        # name is the container name unless the user renamed the row.
+        return {rest, rest.rsplit("/", 1)[-1], row.display_name}
+    return set()
 
-    db.delete(service)
-    db.commit()
+
+def _match_inventory(rows: List[InventoryRow], name: str) -> Optional[str]:
+    return next((row.identity_key for row in rows if name in _names(row)), None)
+
+
+def _match_annotation(repo: AnnotationRepository, name: str) -> Optional[str]:
+    return next((a.identity_key for a in repo.list() if a.identity_key.endswith(f":{name}")), None)
