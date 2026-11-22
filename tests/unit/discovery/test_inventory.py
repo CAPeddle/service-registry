@@ -648,3 +648,9 @@ def test_docker_failure_shows_annotated_containers_as_unknown_not_stopped():
 
     row = inventory.row("docker:app/app")
     assert (row.state, row.group) == ("unknown", "unknown")
+
+
+def test_user_identity_with_a_non_ascii_digit_uid_gets_no_row_instead_of_failing():
+    inventory = inventory_for([annotation("user:²:x.service", hidden=True)])
+
+    assert inventory.rows == []

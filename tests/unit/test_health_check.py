@@ -3,83 +3,12 @@ import socket
 import threading
 import time
 from collections import Counter
-from unittest.mock import Mock, patch
 
 import httpx
 import pytest
 
 from src.api.dependencies.services import get_health_check_service
 from src.services.health_check import HealthCheckService, ProbeRequest
-
-
-@pytest.fixture
-def health_checker():
-    """Create health check service."""
-    return HealthCheckService(timeout=2.0, cache_ttl=60)
-
-
-@patch("httpx.get")
-def test_check_health_success(mock_get, health_checker):
-    """Test successful health check."""
-    mock_response = Mock()
-    mock_response.status_code = 200
-    mock_get.return_value = mock_response
-
-    status = health_checker.check_health("http://localhost:8080/health")
-
-    assert status.is_healthy is True
-    assert status.status_code == 200
-    mock_get.assert_called_once_with("http://localhost:8080/health", timeout=2.0)
-
-
-@patch("httpx.get")
-def test_check_health_non_200_response(mock_get, health_checker):
-    """Test health check with non-200 response."""
-    mock_response = Mock()
-    mock_response.status_code = 503
-    mock_get.return_value = mock_response
-
-    status = health_checker.check_health("http://localhost:8080/health")
-
-    assert status.is_healthy is False
-    assert status.status_code == 503
-
-
-@patch("httpx.get")
-def test_check_health_timeout(mock_get, health_checker):
-    """Test health check with timeout."""
-    mock_get.side_effect = httpx.TimeoutException("Timeout")
-
-    status = health_checker.check_health("http://localhost:8080/health")
-
-    assert status.is_healthy is False
-    assert status.status_code is None
-    assert status.error == "Timeout"
-
-
-@patch("httpx.get")
-def test_check_health_connection_error(mock_get, health_checker):
-    """Test health check with connection error."""
-    mock_get.side_effect = httpx.ConnectError("Connection refused")
-
-    status = health_checker.check_health("http://localhost:8080/health")
-
-    assert status.is_healthy is False
-    assert status.error == "Connection refused"
-
-
-def test_build_health_url():
-    """Test building health check URL."""
-    checker = HealthCheckService()
-
-    url = checker.build_health_url("http://localhost:8080", "/health")
-    assert url == "http://localhost:8080/health"
-
-    url = checker.build_health_url("http://localhost:8080/", "/health")
-    assert url == "http://localhost:8080/health"
-
-    url = checker.build_health_url("http://localhost:8080", None)
-    assert url is None
 
 
 # --- Concurrent probes against real local servers -------------------------
@@ -151,6 +80,17 @@ def _hang(server, conn, path):
     server.release.wait(10)
 
 
+def _no_content(server, conn, path):
+    conn.sendall(_http(204))
+
+
+def _root_answers_health_hangs(server, conn, path):
+    if path == "/":
+        conn.sendall(_http(200))
+    else:
+        server.release.wait(10)
+
+
 @pytest.fixture
 def make_server():
     servers = []
@@ -209,6 +149,27 @@ async def test_health_200_is_healthy_and_500_is_unhealthy(make_server, prober):
     assert results[bad].health.status_code == 500
     assert results[none].health is None
     assert srv.requests["/ok"] == 1 and srv.requests["/bad"] == 1
+
+
+async def test_health_any_2xx_is_healthy(make_server, prober):
+    srv = make_server(_no_content)
+    req = ProbeRequest(srv.port, "/health")
+    health = (await prober.probe_batch([req]))[req].health
+    assert health.is_healthy is True
+    assert health.status_code == 204
+
+
+async def test_hanging_health_path_is_unhealthy_and_keeps_the_http_result(make_server):
+    prober = HealthCheckService()
+    srv = make_server(_root_answers_health_hangs)
+    req = ProbeRequest(srv.port, "/health")
+    start = time.monotonic()
+    result = (await prober.probe_batch([req]))[req]
+    assert time.monotonic() - start < 2.0
+    assert result.checking_failed is False
+    assert result.is_http is True
+    assert result.health.is_healthy is False
+    assert result.health.error == "Timeout"
 
 
 async def test_health_path_without_leading_slash(make_server, prober):

@@ -12,15 +12,16 @@ from sqlalchemy.orm import Session
 
 from src.api.dependencies.services import get_inventory_service
 from src.api.schemas.service_schema import AnnotationResponse, AnnotationUpdate, ServiceCreate
+from src.models.annotation import Annotation
 from src.models.base import get_db
 from src.repositories.annotation_repository import AnnotationRepository
-from src.services.discovery.inventory import InventoryRow, InventoryService
+from src.services.discovery.inventory import InventoryRow, InventoryService, parse_identity_key
 
 router = APIRouter()
 
 
 @router.get("", response_model=List[AnnotationResponse])
-def list_annotations(db: Session = Depends(get_db)):
+def list_annotations(db: Session = Depends(get_db)) -> List[Annotation]:
     """List every annotation."""
     return AnnotationRepository(db).list()
 
@@ -30,7 +31,7 @@ def register_service(
     service_data: ServiceCreate,
     db: Session = Depends(get_db),
     inventory: InventoryService = Depends(get_inventory_service),
-):
+) -> Annotation:
     """Record a registration as an annotation.
 
     A name matching a discovered service annotates that service with the
@@ -51,7 +52,7 @@ def register_service(
 
 
 @router.put("/annotation", response_model=AnnotationResponse)
-def update_annotation(update: AnnotationUpdate, db: Session = Depends(get_db)):
+def update_annotation(update: AnnotationUpdate, db: Session = Depends(get_db)) -> Annotation:
     """Create or change the annotation for one identity key; omitted fields are unchanged."""
     fields = update.model_dump(exclude_unset=True)
     key = fields.pop("identity_key")
@@ -59,7 +60,9 @@ def update_annotation(update: AnnotationUpdate, db: Session = Depends(get_db)):
 
 
 @router.delete("/annotation", status_code=status.HTTP_204_NO_CONTENT)
-def delete_annotation(identity_key: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+def delete_annotation(
+    identity_key: str = Query(..., min_length=1), db: Session = Depends(get_db)
+) -> Response:
     """Remove the annotation for one identity key."""
     if not AnnotationRepository(db).delete(identity_key):
         raise HTTPException(status_code=404, detail="Annotation not found")
@@ -68,11 +71,13 @@ def delete_annotation(identity_key: str = Query(..., min_length=1), db: Session 
 
 def _names(row: InventoryRow) -> set[str]:
     """The names a registration may use for a discovered row."""
-    origin, _, rest = row.identity_key.partition(":")
-    if origin in ("system", "user"):
-        return {rest.rsplit(":", 1)[-1]}
-    if origin == "docker":
-        return {rest, rest.rsplit("/", 1)[-1], row.display_name}
+    parts = parse_identity_key(row.identity_key)
+    if parts is None:
+        return set()
+    if parts.prefix in ("system", "user"):
+        return {parts.name}
+    if parts.prefix == "docker":
+        return {parts.name, parts.name.rsplit("/", 1)[-1], row.display_name}
     return set()
 
 

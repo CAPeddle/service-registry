@@ -2,6 +2,8 @@
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
+from src.services.discovery.inventory import parse_identity_key
+
 
 def _require_http_url(v: str) -> str:
     if not v.startswith(("http://", "https://")):
@@ -64,6 +66,13 @@ class AnnotationUpdate(BaseModel):
     link_override: Optional[str] = None
     health_path: Optional[str] = None
     primary_port: Optional[int] = Field(None, ge=1, le=65535)
+
+    @field_validator("identity_key")
+    @classmethod
+    def validate_identity_key(cls, v: str) -> str:
+        if parse_identity_key(v) is None:
+            raise ValueError("identity_key is not a well-formed identity key")
+        return v
 
     @field_validator("display_name", "description")
     @classmethod

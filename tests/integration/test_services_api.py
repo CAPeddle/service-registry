@@ -326,3 +326,45 @@ def test_cross_origin_preflight_is_not_allowed(client):
 def test_scan_workflow_is_gone(client):
     assert client.get("/scan").status_code == 404
     assert client.post("/api/scan").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "user:²:x.service",
+        "user:1000:",
+        "user:abc:x.service",
+        "system:",
+        "docker:",
+        "manual:",
+        "process:",
+        "docker-proxy:abc",
+        "docker-proxy:",
+        "nonsense:x",
+        "no-colon",
+    ],
+)
+def test_edit_rejects_malformed_identity_keys(client, key):
+    response = client.put("/api/services/annotation", json={"identity_key": key, "hidden": True})
+
+    assert response.status_code == 422
+    assert stored(key) is None
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "system:x.service",
+        "user:1000:x.service",
+        "docker:proj/svc",
+        "docker:container",
+        "manual:printer",
+        "docker-proxy:8080",
+        "process:unknown process",
+    ],
+)
+def test_edit_accepts_every_identity_key_the_inventory_produces(client, key):
+    response = client.put("/api/services/annotation", json={"identity_key": key, "hidden": True})
+
+    assert response.status_code == 200
+    assert stored(key).hidden is True

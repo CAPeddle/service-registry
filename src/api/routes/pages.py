@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 
@@ -105,7 +105,7 @@ async def index(
     show_hidden: bool = False,
     inventory_service: InventoryService = Depends(get_inventory_service),
     prober: HealthCheckService = Depends(get_health_check_service),
-):
+) -> Response:
     """Landing page: what runs on this host and how to reach each service."""
     host = get_safe_hostname(request)
     inventory = await run_in_threadpool(inventory_service.get, refresh=refresh)

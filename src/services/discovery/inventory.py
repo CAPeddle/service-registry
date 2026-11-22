@@ -210,6 +210,43 @@ class _Identity:
     unresolved: bool = False  # a docker-proxy socket whose container is unknown
 
 
+@dataclass(frozen=True)
+class IdentityKeyParts:
+    """An identity key split into its prefix, its name and, for user units, the uid."""
+
+    prefix: str
+    name: str
+    uid: int | None = None
+
+
+_NAMED_PREFIXES = frozenset({"system", "docker", "manual", "process"})
+
+
+def _ascii_digits(text: str) -> bool:
+    return text.isascii() and text.isdigit()
+
+
+def parse_identity_key(key: str) -> IdentityKeyParts | None:
+    """Split an identity key, or return None when it is not well formed.
+
+    Well-formed keys are ``system:<unit>``, ``user:<uid>:<unit>``,
+    ``docker:<project>/<service>`` or ``docker:<container>``, ``manual:<name>``,
+    ``docker-proxy:<port>`` and ``process:<name>``, each with a non-empty name.
+    A unit name may itself contain ':'.
+    """
+    prefix, _, rest = key.partition(":")
+    if prefix == "user":
+        uid, _, unit = rest.partition(":")
+        if not _ascii_digits(uid) or not unit:
+            return None
+        return IdentityKeyParts(prefix, unit, int(uid))
+    if prefix == "docker-proxy":
+        return IdentityKeyParts(prefix, rest) if _ascii_digits(rest) else None
+    if prefix in _NAMED_PREFIXES and rest:
+        return IdentityKeyParts(prefix, rest)
+    return None
+
+
 @dataclass
 class _Draft:
     identity: _Identity
@@ -402,19 +439,11 @@ def _absent_row(
     errors: dict[str, SourceError],
 ) -> InventoryRow | None:
     """A row for an annotated identity that has no listening socket."""
-    origin, _, rest = key.partition(":")
-    unit: tuple[str, int | None] | None = None
-    if origin == "system":
-        unit, name = (rest, None), rest
-    elif origin == "user":
-        uid, _, unit_name = rest.partition(":")
-        if not uid.isdigit() or not unit_name:
-            return None
-        unit, name = (unit_name, int(uid)), unit_name
-    elif origin in ("docker", "manual"):
-        name = rest
-    else:
+    parts = parse_identity_key(key)
+    if parts is None or parts.prefix not in ("system", "user", "docker", "manual"):
         return None
+    origin, name = parts.prefix, parts.name
+    unit = (name, parts.uid) if origin in ("system", "user") else None
 
     group = GROUP_NOT_RUNNING
     description = None
