@@ -176,6 +176,8 @@ class InventoryRow:
 class Inventory:
     rows: list[InventoryRow]
     errors: list[SourceError]
+    # This machine's MagicDNS names, from the serve URLs; empty when serve discovery failed.
+    tailnet_hosts: frozenset[str] = frozenset()
 
     def row(self, identity_key: str) -> InventoryRow | None:
         return next((r for r in self.rows if r.identity_key == identity_key), None)
@@ -279,7 +281,9 @@ def build_inventory(snapshot: SourceSnapshot, annotations: Iterable[Any]) -> Inv
                 rows.append(row)
 
     rows.sort(key=lambda r: (r.display_name.lower(), r.identity_key))
-    return Inventory(rows=rows, errors=list(errors.values()))
+    serve = [] if isinstance(snapshot.serve, SourceError) else snapshot.serve
+    tailnet_hosts = frozenset(h.lower() for m in serve if (h := urlsplit(m.url).hostname))
+    return Inventory(rows=rows, errors=list(errors.values()), tailnet_hosts=tailnet_hosts)
 
 
 class _Context:

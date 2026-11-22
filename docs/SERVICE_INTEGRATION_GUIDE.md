@@ -69,6 +69,14 @@ description and health path are stored. `base_url` is required by the API but
 is not stored as a link in that case, because links are built from the address
 the visitor used.
 
+Page edits win. If the description or health path was set with the Edit
+button, a later registration does not overwrite it. When the registration
+sends a different value, it is held and shown at the top of the landing page
+under "Registrations held for review", next to the current values. From there
+you can "Use these values" or "Dismiss" it. The API still answers `201` with
+the annotation as stored, so a service that registers on every start keeps
+working. Clearing the field with Edit makes it follow registrations again.
+
 ## Adding something that is not local
 
 A service on another machine, or one that is not listening on this host, has
@@ -108,6 +116,15 @@ Other endpoints:
   default visibility.
 - `DELETE /api/services/annotation?identity_key=<key>` removes one. The
   identity key goes in the query string because it contains `:` and `/`.
+- `POST /api/services/registrations/<id>/apply` applies a held registration's
+  values to the fields that were held and removes it from the review list.
+- `DELETE /api/services/registrations/<id>` dismisses a held registration.
+
+Write requests (POST, PUT, PATCH, DELETE) must be sent to one of the server's
+own addresses: an IP address, a name without dots (`z2`), a `.local` name, the
+tailnet MagicDNS name, or a name in the `TRUSTED_HOSTS` setting. Anything else
+gets `403`, which blocks DNS-rebinding attacks from web pages. `curl
+http://z2/...`, `http://192.168.2.48/...` and `http://127.0.0.1/...` all work.
 
 Identity keys look like `system:grafana-server.service`,
 `user:1000:myapp.service`, `docker:<project>/<service>`, `manual:<name>` and

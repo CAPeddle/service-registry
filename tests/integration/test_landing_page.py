@@ -555,3 +555,77 @@ def test_page_loads_when_no_shown_row_has_a_port_to_probe(client, overrides):
     html = page(client)
     assert "sockets" in re.search(r'class="source-errors"[^>]*>(.*?)</div>', html, re.S).group(1)
     assert "system:finance-tracker.service" in html
+
+
+# Registrations held for review
+
+
+def held_html(html):
+    match = re.search(r'<section[^>]*id="held-registrations"[^>]*>(.*?)</section>', html, re.S)
+    assert match, "no held registrations section"
+    return match.group(1)
+
+
+def test_no_held_section_without_held_registrations(client, overrides):
+    serve(overrides, FakeInventory([AH_CONNECTOR]))
+
+    assert 'id="held-registrations"' not in page(client)
+
+
+def test_held_registration_is_shown_for_review_with_posted_and_current_values(client, overrides):
+    serve(overrides, FakeInventory([AH_CONNECTOR]))
+    key = "user:1000:ah-connector.service"
+    client.put(
+        "/api/services/annotation",
+        json={"identity_key": key, "description": "<b>mine</b>", "health_path": "/ready"},
+    )
+    response = client.post(
+        "/api/services",
+        json={
+            "name": "ah-connector.service",
+            "description": "x');alert(1);//",
+            "base_url": "http://127.0.0.1:8772",
+            "health_endpoint": "/health",
+        },
+    )
+    assert response.status_code == 201
+
+    html = page(client)
+    section = held_html(html)
+    assert html.index('id="held-registrations"') < html.index('id="group-')
+    assert "Registrations held for review" in html
+    assert "ah-connector" in section
+    assert "description" in section and "health path" in section
+    assert "&lt;b&gt;mine&lt;/b&gt;" in section
+    assert "/ready" in section and "/health" in section
+    assert "Use these values" in section and "Dismiss" in section
+
+    collector = AttributeCollector()
+    collector.feed(html)
+    assert [n for n, _ in collector.attributes if n.lower().startswith("on")] == []
+    ids = {v for n, v in collector.attributes if n == "data-attempt-id"}
+    assert len(ids) == 1
+    assert "<b>mine</b>" not in html
+    for script in re.findall(r"<script[^>]*>(.*?)</script>", html, re.S):
+        assert "alert(" not in script
+        assert "mine" not in script
+
+
+def test_held_registration_buttons_work_through_the_api(client, overrides):
+    serve(overrides, FakeInventory([AH_CONNECTOR]))
+    key = "user:1000:ah-connector.service"
+    client.put("/api/services/annotation", json={"identity_key": key, "description": "mine"})
+    registration = {
+        "name": "ah-connector.service",
+        "description": "posted",
+        "base_url": "http://127.0.0.1:8772",
+    }
+    client.post("/api/services", json=registration)
+
+    collector = AttributeCollector()
+    collector.feed(page(client))
+    [attempt_id] = {v for n, v in collector.attributes if n == "data-attempt-id"}
+    assert client.post(f"/api/services/registrations/{attempt_id}/apply").status_code == 200
+    assert 'id="held-registrations"' not in page(client)
+    [note] = client.get("/api/services").json()
+    assert note["description"] == "posted"

@@ -1,6 +1,6 @@
 """Annotation model: the user's per-service choices, keyed by stable identity."""
 from datetime import datetime, UTC
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, false
 from src.models.base import Base
 
 
@@ -17,6 +17,9 @@ class Annotation(Base):
     link_override = Column(String, nullable=True)
     health_path = Column(String, nullable=True)
     primary_port = Column(Integer, nullable=True)
+    # Set by page edits; a registration does not overwrite a field the page set.
+    description_from_page = Column(Boolean, nullable=False, default=False, server_default=false())
+    health_path_from_page = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(
         DateTime,

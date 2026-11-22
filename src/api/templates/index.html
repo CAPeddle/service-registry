@@ -22,6 +22,23 @@
     }
     .source-errors ul { margin: 4px 0 0 20px; }
     .source-errors li { overflow-wrap: anywhere; }
+    .held {
+        background: #f3f7ff;
+        border: 1px solid #9db4e0;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-bottom: 24px;
+    }
+    .held h2 { font-size: 18px; color: #1d3f8a; margin-bottom: 4px; }
+    .held-item { padding: 12px 0; border-top: 1px solid #d5e0f5; }
+    .held-values { border-collapse: collapse; margin: 6px 0 8px; width: 100%; }
+    .held-values th, .held-values td {
+        text-align: left;
+        vertical-align: top;
+        padding: 2px 12px 2px 0;
+        overflow-wrap: anywhere;
+    }
+    .held-values thead th { font-size: 13px; color: #5f6870; font-weight: 500; }
     .group { margin-bottom: 24px; }
     .group h2 {
         font-size: 18px;
@@ -170,6 +187,33 @@
 </div>
 {% endif %}
 
+{% if held %}
+<section class="held" id="held-registrations">
+    <h2>Registrations held for review ({{ held | length }})</h2>
+    <p class="service-meta">These registrations would have replaced values set on this page, so they were not applied.</p>
+    {% for item in held %}
+    <article class="held-item">
+        <div class="service-name">{{ item.service }}</div>
+        <p class="service-meta">{{ item.identity_key }} &middot; received {{ item.received }}</p>
+        <table class="held-values">
+            <thead><tr><th scope="col">Field</th><th scope="col">Registration sent</th><th scope="col">Current (set on this page)</th></tr></thead>
+            <tbody>
+                {% for field in item.fields %}
+                <tr><th scope="row">{{ field.label }}</th><td>{{ field.posted }}</td><td>{{ field.current or '' }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="service-actions">
+            <button type="button" class="btn-small js-apply-registration"
+                    data-attempt-id="{{ item.attempt_id }}">Use these values</button>
+            <button type="button" class="btn-small js-dismiss-registration"
+                    data-attempt-id="{{ item.attempt_id }}">Dismiss</button>
+        </div>
+    </article>
+    {% endfor %}
+</section>
+{% endif %}
+
 {% for group in groups %}
 <section class="group" id="group-{{ group.key }}">
     <h2>{{ group.title }} ({{ group.rows | length + group.others | length }})</h2>
@@ -237,14 +281,15 @@
         window.location.assign(url.toString());
     }
 
-    async function saveAnnotation(body) {
-        var response = await fetch('/api/services/annotation', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
+    async function send(method, url, body) {
+        var options = { method: method };
+        if (body !== undefined) {
+            options.headers = { 'Content-Type': 'application/json' };
+            options.body = JSON.stringify(body);
+        }
+        var response = await fetch(url, options);
         if (response.ok) { return; }
-        var message = 'Save failed (' + response.status + ')';
+        var message = 'Request failed (' + response.status + ')';
         try {
             var data = await response.json();
             if (Array.isArray(data.detail)) {
@@ -254,6 +299,22 @@
             }
         } catch (ignored) { /* keep the status message */ }
         throw new Error(message);
+    }
+
+    function saveAnnotation(body) {
+        return send('PUT', '/api/services/annotation', body);
+    }
+
+    async function actOnRegistration(button, method, suffix) {
+        button.disabled = true;
+        try {
+            var url = '/api/services/registrations/' + encodeURIComponent(button.dataset.attemptId) + suffix;
+            await send(method, url);
+            reloadPage();
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = error.message;
+        }
     }
 
     function openEditor(button) {
@@ -288,6 +349,16 @@
         var edit = event.target.closest('.js-edit');
         if (edit) {
             openEditor(edit);
+            return;
+        }
+        var apply = event.target.closest('.js-apply-registration');
+        if (apply) {
+            await actOnRegistration(apply, 'POST', '/apply');
+            return;
+        }
+        var dismiss = event.target.closest('.js-dismiss-registration');
+        if (dismiss) {
+            await actOnRegistration(dismiss, 'DELETE', '');
             return;
         }
         var toggle = event.target.closest('.js-toggle-hidden');

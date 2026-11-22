@@ -10,8 +10,13 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
 
 from src.api.dependencies.services import get_health_check_service, get_inventory_service
+from src.models.base import get_db
+from src.models.registration_attempt import PROTECTED_FIELDS
+from src.repositories.annotation_repository import AnnotationRepository
+from src.repositories.registration_attempt_repository import RegistrationAttemptRepository
 from src.services.discovery.inventory import (
     GROUP_INTERNAL,
     GROUP_LAN,
@@ -23,6 +28,7 @@ from src.services.discovery.inventory import (
     LAN_BLOCKED,
     TAILNET,
     AccessPath,
+    Inventory,
     InventoryRow,
     InventoryService,
 )
@@ -42,6 +48,8 @@ GROUP_TITLES = {
     GROUP_INTERNAL: "Internal",
     GROUP_NOT_RUNNING: "Not running",
 }
+
+_FIELD_LABELS = {"description": "description", "health_path": "health path"}
 
 _REACH_LABELS = {
     LAN: "LAN",
@@ -98,6 +106,22 @@ class GroupView:
     others: list[RowView]
 
 
+@dataclass
+class HeldFieldView:
+    label: str
+    posted: Optional[str]
+    current: Optional[str]
+
+
+@dataclass
+class HeldView:
+    attempt_id: int
+    service: str
+    identity_key: str
+    received: str
+    fields: list[HeldFieldView]
+
+
 @router.get("/")
 async def index(
     request: Request,
@@ -105,10 +129,12 @@ async def index(
     show_hidden: bool = False,
     inventory_service: InventoryService = Depends(get_inventory_service),
     prober: HealthCheckService = Depends(get_health_check_service),
+    db: Session = Depends(get_db),
 ) -> Response:
     """Landing page: what runs on this host and how to reach each service."""
     host = get_safe_hostname(request)
     inventory = await run_in_threadpool(inventory_service.get, refresh=refresh)
+    held = await run_in_threadpool(_held_views, db, inventory)
 
     shown = [row for row in inventory.rows if show_hidden or not row.hidden]
     requests = {row.identity_key: _probe_requests(row) for row in shown}
@@ -136,12 +162,41 @@ async def index(
         "index.html",
         {
             "request": request,
+            "held": held,
             "groups": groups,
             "errors": inventory.errors,
             "show_hidden": show_hidden,
             "hidden_count": sum(1 for row in inventory.rows if row.hidden),
         },
     )
+
+
+def _held_views(db: Session, inventory: Inventory) -> list[HeldView]:
+    """Held registrations, with the posted and the current value of each held field."""
+    annotations = AnnotationRepository(db)
+    views = []
+    for attempt in RegistrationAttemptRepository(db).list():
+        note = annotations.get(attempt.identity_key)
+        row = inventory.row(attempt.identity_key)
+        name = row.display_name if row else getattr(note, "display_name", None)
+        fields = [
+            HeldFieldView(
+                _FIELD_LABELS[field],
+                getattr(attempt, PROTECTED_FIELDS[field]),
+                getattr(note, field, None),
+            )
+            for field in attempt.held_fields
+        ]
+        views.append(
+            HeldView(
+                attempt_id=attempt.id,
+                service=name or attempt.identity_key,
+                identity_key=attempt.identity_key,
+                received=f"{attempt.received_at:%Y-%m-%d %H:%M} UTC",
+                fields=fields,
+            )
+        )
+    return views
 
 
 def _probe_requests(row: InventoryRow) -> list[ProbeRequest]:

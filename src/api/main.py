@@ -1,7 +1,8 @@
 """FastAPI application entry point."""
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from src.config import settings
+from src.api.dependencies.trusted_host import require_trusted_host
 from src.api.routes import health, services, pages
 from src.core.database import init_db
 
@@ -11,6 +12,8 @@ app = FastAPI(
     debug=settings.debug,
     docs_url="/docs",
     redoc_url="/redoc",
+    # Every route: write requests from an untrusted Host or Origin get 403.
+    dependencies=[Depends(require_trusted_host)],
 )
 
 

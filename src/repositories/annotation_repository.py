@@ -3,7 +3,16 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from src.models.annotation import Annotation
 
-_FIELDS = ("display_name", "description", "hidden", "link_override", "health_path", "primary_port")
+_FIELDS = (
+    "display_name",
+    "description",
+    "hidden",
+    "link_override",
+    "health_path",
+    "primary_port",
+    "description_from_page",
+    "health_path_from_page",
+)
 
 
 class AnnotationRepository:

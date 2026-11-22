@@ -64,6 +64,17 @@ An annotation can set a display name, description, hidden flag (unset means the
 default), link override, health path and primary port. On first start, the
 hand-approved rows of the old `services` table are imported once.
 
+### Page edits win over registrations
+
+A description or health path set with Edit is not overwritten when the
+service registers again through `POST /api/services`. If the registration
+carries a different value, it is held in the `registration_attempts` table and
+shown at the top of the page under "Registrations held for review", with the
+values it sent next to the current ones. "Use these values" applies the sent
+values (and the field stops being protected); "Dismiss" discards them. Only
+the latest held registration per service is kept. Clearing a field with Edit
+removes its protection.
+
 ## API
 
 Interactive docs are at `/docs` and `/redoc`. `GET /api/v1/health` is the
@@ -75,6 +86,8 @@ registry's own health check.
 | POST | `/api/services` | register a service (below) |
 | PUT | `/api/services/annotation` | create or update an annotation; JSON body with `identity_key` and any of `display_name`, `description`, `hidden`, `link_override`, `health_path`, `primary_port`. An empty string clears a text field. |
 | DELETE | `/api/services/annotation?identity_key=...` | remove an annotation |
+| POST | `/api/services/registrations/{id}/apply` | use a held registration's values |
+| DELETE | `/api/services/registrations/{id}` | dismiss a held registration |
 
 `POST /api/services` takes `{name, description, base_url, port?, health_endpoint?}`.
 `base_url` must start with http:// or https://, and `health_endpoint` must start
@@ -82,7 +95,34 @@ with `/`. If `name` matches a discovered unit, container or compose service,
 only the description and health path are stored. Otherwise a `manual:<name>`
 row is created and `base_url` becomes its link.
 
+Page edits win: a description or health path set on the page (with `PUT`) is
+kept, and a registration that sends a different value for it is held for
+review on the landing page. The response is still `201` with the annotation.
+
+Write requests (POST, PUT, PATCH, DELETE) are answered with `403` unless they
+come through one of the server's own addresses; see [Security](#security).
+
 See [docs/SERVICE_INTEGRATION_GUIDE.md](docs/SERVICE_INTEGRATION_GUIDE.md).
+
+## Security
+
+There is no login: anyone who can reach port 80 can edit annotations. nginx
+passes every Host to the app, so that the page answers on any address. To stop
+a malicious web page from rebinding its own domain name to the Z2's address
+and sending writes from the visitor's browser, write requests (POST, PUT,
+PATCH, DELETE) get `403` unless the `Host` header, and the `Origin` header if
+there is one, names a trusted host:
+
+- an IP address (IPv4, or IPv6 in brackets)
+- a name without dots, such as `z2` or `localhost`
+- a name ending in `.local`
+- the tailnet MagicDNS name, as found by `tailscale serve` discovery (not
+  trusted while that source fails)
+- a name listed in the `TRUSTED_HOSTS` setting (comma-separated, from the
+  environment or `.env`; empty by default)
+
+Ports are ignored and names are compared case-insensitively. Reads (GET, HEAD,
+OPTIONS) work under any Host.
 
 ## Development
 
@@ -109,14 +149,16 @@ src/
     main.py                  FastAPI app
     routes/                  pages.py (landing page), services.py, health.py
     schemas/service_schema.py
-    dependencies/services.py
+    dependencies/            services.py, trusted_host.py (write Host/Origin check)
     templates/               base.html, index.html
   services/
     discovery/               sockets, cgroups, units, docker_ports,
                              tailscale_serve, firewall, inventory, cache
     health_check.py          HTTP and health-path probes
-  models/                    annotation.py, service.py (legacy), base.py
-  repositories/annotation_repository.py
+  models/                    annotation.py, registration_attempt.py,
+                             service.py (legacy), base.py
+  repositories/              annotation_repository.py,
+                             registration_attempt_repository.py
   core/                      database.py, exceptions.py
   config/
 deploy/

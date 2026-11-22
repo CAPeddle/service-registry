@@ -6,6 +6,7 @@ from src.api.dependencies.services import get_health_check_service, get_inventor
 from src.api.main import app
 from src.models.base import Base, SessionLocal, engine
 from src.repositories.annotation_repository import AnnotationRepository
+from src.repositories.registration_attempt_repository import RegistrationAttemptRepository
 from src.services.discovery.inventory import AccessPath, Inventory, InventoryRow
 
 
@@ -368,3 +369,173 @@ def test_edit_accepts_every_identity_key_the_inventory_produces(client, key):
 
     assert response.status_code == 200
     assert stored(key).hidden is True
+
+
+# Page edits win over registrations; conflicting registrations are held
+
+
+AH_KEY = "user:1000:ah-connector.service"
+
+
+def page_edit(client, **fields):
+    response = client.put("/api/services/annotation", json={"identity_key": AH_KEY, **fields})
+    assert response.status_code == 200
+
+
+def held():
+    session = SessionLocal()
+    try:
+        return RegistrationAttemptRepository(session).list()
+    finally:
+        session.close()
+
+
+def test_registration_on_a_fresh_service_applies_and_holds_nothing(client):
+    response = client.post("/api/services", json=AH_REGISTRATION)
+
+    assert response.status_code == 201
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("Albert Heijn connector", "/health")
+    assert held() == []
+
+
+def test_page_edited_description_survives_a_registration_and_the_attempt_is_held(client):
+    page_edit(client, description="My own words")
+
+    response = client.post("/api/services", json=AH_REGISTRATION)
+
+    assert response.status_code == 201
+    assert response.json()["description"] == "My own words"
+    assert response.json()["health_path"] == "/health"
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("My own words", "/health")
+    [attempt] = held()
+    assert attempt.identity_key == AH_KEY
+    assert attempt.name == "ah-connector.service"
+    assert attempt.description == "Albert Heijn connector"
+    assert attempt.base_url == "http://127.0.0.1:8772"
+    assert attempt.health_endpoint == "/health"
+    assert attempt.held_fields == ["description"]
+    assert attempt.received_at is not None
+
+
+def test_registration_with_the_same_value_as_the_page_edit_holds_nothing(client):
+    page_edit(client, description="Albert Heijn connector")
+
+    client.post("/api/services", json=AH_REGISTRATION)
+
+    assert held() == []
+
+
+def test_page_edited_health_path_is_protected_too(client):
+    page_edit(client, health_path="/ready")
+
+    client.post("/api/services", json=AH_REGISTRATION)
+
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("Albert Heijn connector", "/ready")
+    [attempt] = held()
+    assert attempt.held_fields == ["health_path"]
+
+
+def test_registration_without_a_health_endpoint_keeps_a_protected_one_and_holds_nothing(client):
+    page_edit(client, health_path="/ready")
+
+    client.post("/api/services", json={**AH_REGISTRATION, "health_endpoint": None})
+
+    assert stored(AH_KEY).health_path == "/ready"
+    assert held() == []
+
+
+def test_both_protected_fields_are_held_together(client):
+    page_edit(client, description="Mine", health_path="/ready")
+
+    client.post("/api/services", json=AH_REGISTRATION)
+
+    [attempt] = held()
+    assert attempt.held_fields == ["description", "health_path"]
+
+
+def test_a_later_held_registration_replaces_the_pending_one_for_that_service(client):
+    page_edit(client, description="Mine")
+
+    client.post("/api/services", json={**AH_REGISTRATION, "description": "First"})
+    client.post("/api/services", json={**AH_REGISTRATION, "description": "Second"})
+
+    [attempt] = held()
+    assert attempt.description == "Second"
+
+
+def test_clearing_a_field_on_the_page_removes_its_protection(client):
+    page_edit(client, description="Mine", health_path="/ready")
+    page_edit(client, description="", health_path="")
+
+    client.post("/api/services", json=AH_REGISTRATION)
+
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("Albert Heijn connector", "/health")
+    assert held() == []
+
+
+def test_edits_to_other_fields_leave_protection_alone(client):
+    page_edit(client, description="Mine")
+    page_edit(client, hidden=True, display_name="AH")
+
+    client.post("/api/services", json=AH_REGISTRATION)
+
+    assert stored(AH_KEY).description == "Mine"
+    assert len(held()) == 1
+
+
+def test_using_held_values_copies_them_clears_protection_and_removes_the_attempt(client):
+    page_edit(client, description="Mine", health_path="/ready")
+    client.post("/api/services", json=AH_REGISTRATION)
+    [attempt] = held()
+
+    response = client.post(f"/api/services/registrations/{attempt.id}/apply")
+
+    assert response.status_code == 200
+    assert response.json()["description"] == "Albert Heijn connector"
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("Albert Heijn connector", "/health")
+    assert (note.description_from_page, note.health_path_from_page) == (False, False)
+    assert held() == []
+
+    client.post("/api/services", json={**AH_REGISTRATION, "description": "Newer"})
+    assert stored(AH_KEY).description == "Newer"
+    assert held() == []
+
+
+def test_using_held_values_leaves_fields_that_were_not_held_alone(client):
+    page_edit(client, description="Mine")
+    client.post("/api/services", json=AH_REGISTRATION)
+    page_edit(client, health_path="/ready")
+    [attempt] = held()
+
+    client.post(f"/api/services/registrations/{attempt.id}/apply")
+
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("Albert Heijn connector", "/ready")
+    assert note.health_path_from_page is True
+
+
+def test_dismissing_a_held_registration_removes_it_and_changes_nothing(client):
+    page_edit(client, description="Mine")
+    client.post("/api/services", json=AH_REGISTRATION)
+    [attempt] = held()
+
+    response = client.delete(f"/api/services/registrations/{attempt.id}")
+
+    assert response.status_code == 204
+    assert held() == []
+    assert stored(AH_KEY).description == "Mine"
+    assert stored(AH_KEY).description_from_page is True
+
+
+def test_unknown_held_registration_is_404(client):
+    for response in (
+        client.post("/api/services/registrations/999/apply"),
+        client.delete("/api/services/registrations/999"),
+    ):
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Held registration not found"}
