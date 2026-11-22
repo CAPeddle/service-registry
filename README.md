@@ -1,404 +1,184 @@
 # Service Registry
 
-A web-based service registry for Ubuntu systemd services with automatic discovery, health monitoring, and a clean web interface.
+A landing page for the Z2 home server. It lists every service listening on a
+TCP port, shows how each one can be reached (LAN, tailnet, or only from the
+machine itself), and links to the ones that answer HTTP. Nothing has to be
+registered: the list is discovered live on each page load.
 
-## Features
+The app runs on the Z2 itself (LAN IP 192.168.2.48, hostname `z2`). nginx
+serves it on port 80.
 
-- **Automatic Service Discovery**: Scans systemd for running services
-- **Port Detection**: Identifies web services by listening ports
-- **Health Monitoring**: HTTP health checks with caching
-- **Web UI**: Clean dashboard and service configuration interface
-- **REST API**: Full CRUD API for service management
-- **Database**: SQLite with automatic schema initialization
+## How discovery works
 
-## Screenshots
+Each page load (cached for about 10 seconds; the Refresh link bypasses the
+cache) combines these sources:
 
-### Landing Page
-Dashboard showing all configured services with health status indicators.
+| Source | Used for |
+|--------|----------|
+| `ss -tlnpH` | listening sockets and the PIDs that own them |
+| `/proc/<pid>/cgroup` | mapping a PID to a system or user systemd unit |
+| `docker ps` | published ports and compose project/service labels |
+| `tailscale serve status --json` | tailnet front-ends for local ports |
+| `ufw status verbose` | which ports the firewall admits from the LAN |
+| `systemctl show` | unit descriptions and state (user units via `systemctl --user -M <user>@`) |
 
-### Scan Page
-Discover systemd services, view listening ports, and configure services via modal dialog.
+The app runs as root (see `deploy/systemd/service-registry.service`) so it can
+see every socket's process, read the ufw rules and query user units.
 
-## Requirements
+If a source fails, the affected rows show "reachability unknown" and a banner
+at the top of the page names the source.
 
-- **Python**: 3.11 or higher
-- **OS**: Ubuntu/Debian (requires systemd)
-- **Permissions**: Root/sudo access (for systemctl and ss commands)
-- **Optional**: Nginx (for production deployment on port 80)
+## The landing page
 
-## Quick Start
+Each row shows how the service can be reached:
 
-```bash
-# 1. Clone repository
-git clone https://github.com/CAPeddle/service-registry.git
-cd service-registry
+- a LAN link, built from the address the visitor used to open the page
+- "blocked by firewall": listening on the LAN but not admitted by ufw
+- "tailnet only": reachable over Tailscale (MagicDNS links). Services bound to
+  all addresses always get this, because tailscaled admits tailnet traffic
+  ahead of ufw.
+- "internal only": bound to loopback, no link
+- "reachability unknown": a source failed
 
-# 2. Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+A link is shown only when the port answers HTTP (probed on 127.0.0.1,
+concurrently, within about 1.5 seconds) or when you set a link override.
 
-# 3. Install dependencies
-pip install -r requirements.txt
+Rows are grouped as Unknown, Web (LAN), Tailnet, Internal and Not running.
+Noise (ssh, DNS, tailscaled internals, nginx, the registry itself,
+unattributed processes) is hidden by default. "Show hidden" (or
+`/?show_hidden=1`) adds a Hidden group.
 
-# 4. Run development server (requires sudo for systemd access)
-sudo venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+Each row has Edit and Hide buttons. Edits are stored as annotations.
 
-# 5. Visit http://192.168.2.24:8000
-```
+### Annotations
 
-## Configuration
+Annotations live in the SQLite table `annotations`, keyed by an identity:
 
-### Environment Variables
+- `system:<unit>`
+- `user:<uid>:<unit>`
+- `docker:<project>/<service>`
+- `manual:<name>`
+- `process:<name>`
 
-Copy `.env.example` to `.env` and customize:
+An annotation can set a display name, description, hidden flag (unset means the
+default), link override, health path and primary port. On first start, the
+hand-approved rows of the old `services` table are imported once.
 
-```bash
-cp .env.example .env
-```
+## API
 
-Available settings:
+Interactive docs are at `/docs` and `/redoc`. `GET /api/v1/health` is the
+registry's own health check.
 
-```env
-# Application Settings
-APP_NAME="Service Registry"
-VERSION="0.1.0"
-DEBUG=false
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/services` | list annotations |
+| POST | `/api/services` | register a service (below) |
+| PUT | `/api/services/annotation` | create or update an annotation; JSON body with `identity_key` and any of `display_name`, `description`, `hidden`, `link_override`, `health_path`, `primary_port`. An empty string clears a text field. |
+| DELETE | `/api/services/annotation?identity_key=...` | remove an annotation |
 
-# Server Settings
-HOST=0.0.0.0
-PORT=8000
+`POST /api/services` takes `{name, description, base_url, port?, health_endpoint?}`.
+`base_url` must start with http:// or https://, and `health_endpoint` must start
+with `/`. If `name` matches a discovered unit, container or compose service,
+only the description and health path are stored. Otherwise a `manual:<name>`
+row is created and `base_url` becomes its link.
 
-# Database Settings
-DATABASE_URL=sqlite:///./service_registry.db
-
-# API Settings
-API_PREFIX=/api/v1
-
-# Health Check Settings
-HEALTH_CHECK_TIMEOUT=2.0
-HEALTH_CHECK_CACHE_TTL=60
-```
-
-## Production Deployment
-
-### Option 1: Direct on Port 80 (Simple)
-
-Run directly on port 80 to access without specifying a port:
-
-```bash
-sudo venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port 80
-```
-
-Access at: `http://192.168.2.24`
-
-### Option 2: Nginx Reverse Proxy (Recommended)
-
-This is the recommended production setup as it allows:
-- Running the service as non-root on port 8000
-- Nginx handles port 80
-- Easy SSL/HTTPS setup later
-- Better performance and security
-
-#### Step 1: Install Nginx
-
-```bash
-sudo apt update
-sudo apt install nginx
-```
-
-#### Step 2: Create Nginx Configuration
-
-```bash
-sudo nano /etc/nginx/sites-available/service-registry
-```
-
-Paste the following configuration:
-
-```nginx
-server {
-    listen 80;
-    server_name 192.168.2.24;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-#### Step 3: Enable the Site
-
-```bash
-# Create symbolic link
-sudo ln -s /etc/nginx/sites-available/service-registry /etc/nginx/sites-enabled/
-
-# Test configuration
-sudo nginx -t
-
-# Reload Nginx
-sudo systemctl reload nginx
-```
-
-#### Step 4: Create Systemd Service
-
-Create `/etc/systemd/system/service-registry.service`:
-
-```bash
-sudo nano /etc/systemd/system/service-registry.service
-```
-
-Paste:
-
-```ini
-[Unit]
-Description=Service Registry API
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/home/cpeddle/projects/personal/service_registry
-Environment="PATH=/home/cpeddle/projects/personal/service_registry/venv/bin"
-ExecStart=/home/cpeddle/projects/personal/service_registry/venv/bin/uvicorn src.api.main:app --host 127.0.0.1 --port 8000
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**Note**: Adjust the `WorkingDirectory` and paths to match your installation location.
-
-#### Step 5: Start the Service
-
-```bash
-# Reload systemd
-sudo systemctl daemon-reload
-
-# Enable service to start on boot
-sudo systemctl enable service-registry
-
-# Start the service
-sudo systemctl start service-registry
-
-# Check status
-sudo systemctl status service-registry
-```
-
-#### Step 6: Access the Application
-
-Visit `http://192.168.2.24` (no port needed!)
-
-## Usage
-
-### Web Interface
-
-1. **Dashboard** (`/`): View all configured services with health status
-2. **Scan Page** (`/scan`): Click "Scan for Services" button
-   - Discovers all systemd services
-   - Shows web services (detected by listening ports)
-   - Configure services by clicking "Configure" button
-
-### API Endpoints
-
-#### Service Management
-
-```bash
-# List all services
-GET /api/services
-
-# Get service by ID
-GET /api/services/{id}
-
-# Create new service
-POST /api/services
-{
-  "name": "myapp.service",
-  "description": "My Application",
-  "base_url": "http://192.168.2.24:8080",
-  "port": 8080,
-  "health_endpoint": "/health"
-}
-
-# Update service
-PUT /api/services/{id}
-{
-  "description": "Updated description"
-}
-
-# Delete service
-DELETE /api/services/{id}
-```
-
-#### Scan Services
-
-```bash
-# Trigger systemd scan
-POST /api/scan
-```
-
-Returns:
-```json
-{
-  "message": "Scan completed successfully",
-  "stats": {
-    "total_scanned": 150,
-    "new_discovered": 3,
-    "updated": 5,
-    "new_raw": 142
-  }
-}
-```
-
-### Interactive API Documentation
-
-- **Swagger UI**: `http://192.168.2.24/docs`
-- **ReDoc**: `http://192.168.2.24/redoc`
+See [docs/SERVICE_INTEGRATION_GUIDE.md](docs/SERVICE_INTEGRATION_GUIDE.md).
 
 ## Development
 
-### Running Tests
-
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov
-
-# Run specific test types
-pytest tests/unit/
-pytest tests/integration/
-
-# Watch mode (requires pytest-watch)
-ptw
+python -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/uvicorn src.api.main:app --reload
+.venv/bin/pytest
 ```
 
-### Project Structure
+Discovery needs `ss`, `docker`, `tailscale`, `ufw` and `systemctl`, and root
+for the full picture. Without them the page still loads and reports the
+failed sources.
+
+`pytest` uses a temporary database set up in `tests/conftest.py`, so it never
+touches `service_registry.db`. Discovery tests run against captured command
+output in `tests/fixtures/z2/`.
+
+## Project structure
 
 ```
-service_registry/
-├── src/
-│   ├── api/                    # API layer
-│   │   ├── routes/            # API endpoints
-│   │   ├── schemas/           # Pydantic models
-│   │   ├── dependencies/      # Dependency injection
-│   │   └── templates/         # HTML templates
-│   ├── core/                   # Core utilities
-│   ├── models/                 # Database models
-│   ├── services/              # Business logic
-│   │   ├── systemd_discovery.py
-│   │   ├── port_detection.py
-│   │   ├── registry_service.py
-│   │   └── health_check.py
-│   └── config/                # Configuration
-├── tests/
-│   ├── unit/                  # Unit tests
-│   └── integration/           # Integration tests
-├── docs/                      # Documentation
-└── requirements.txt           # Python dependencies
+src/
+  api/
+    main.py                  FastAPI app
+    routes/                  pages.py (landing page), services.py, health.py
+    schemas/service_schema.py
+    dependencies/services.py
+    templates/               base.html, index.html
+  services/
+    discovery/               sockets, cgroups, units, docker_ports,
+                             tailscale_serve, firewall, inventory, cache
+    health_check.py          HTTP and health-path probes
+  models/                    annotation.py, service.py (legacy), base.py
+  repositories/annotation_repository.py
+  core/                      database.py, exceptions.py
+  config/
+deploy/
+  nginx/service-registry.conf
+  systemd/service-registry.service
+tests/                       unit/, integration/, fixtures/z2/
+docs/
 ```
 
-### Architecture
+## Deployment
 
-The project follows a layered architecture:
+Run these on the Z2.
 
-1. **API Layer** (`src/api/`): FastAPI routes and request/response handling
-2. **Service Layer** (`src/services/`): Business logic
-3. **Model Layer** (`src/models/`): SQLAlchemy database models
-4. **Core Layer** (`src/core/`): Shared utilities
+1. Install the nginx vhost:
 
-### Adding New Features
+   ```bash
+   sudo cp deploy/nginx/service-registry.conf /etc/nginx/sites-available/service-registry
+   ls -l /etc/nginx/sites-enabled/   # create the service-registry symlink if missing
+   sudo rm /etc/nginx/sites-enabled/default
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
 
-1. Write tests first (TDD approach)
-2. Implement service layer logic
-3. Add API endpoints
-4. Update documentation
+2. Open port 80 to the LAN (tailnet traffic already reaches nginx):
 
-### Integrating Services with Registry
+   ```bash
+   sudo ufw allow in on eno1 from 192.168.2.0/24 to any port 80 proto tcp
+   ```
 
-**For developers creating new services or modifying existing ones:**
+3. Update the live checkout in `/home/cpeddle/service-registry`. A plain
+   `git pull` aborts there because of a locally modified `CLAUDE.md` and an
+   untracked copy of the plan file. First confirm `origin/master` contains the
+   merged branch, including the commits that were previously only local. Then:
 
-See the comprehensive [Service Integration Guide](docs/SERVICE_INTEGRATION_GUIDE.md) for:
-- Systemd service configuration (recommended)
-- Manual API registration
-- Health check setup
-- Port detection requirements
-- Common integration patterns
-- Troubleshooting tips
+   ```bash
+   cd /home/cpeddle/service-registry
+   git fetch origin && git checkout master && git reset --hard origin/master
+   rm -f src/services/systemd_discovery.py.backup
+   ```
 
-This guide is optimized for AI coding assistants (Claude, Copilot) but useful for all developers.
+   Untracked files (`service_registry.db`, `.venv`) are not touched.
 
-## Troubleshooting
+4. If the unit file changed, install it, then restart:
 
-### Permission Denied Errors
+   ```bash
+   sudo cp deploy/systemd/service-registry.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl restart service-registry
+   ```
 
-The service requires root/sudo access for:
-- `systemctl` commands (systemd service discovery)
-- `ss -tlnp` command (port detection)
+5. Check:
 
-**Solution**: Always run with `sudo`
+   ```bash
+   for h in 192.168.2.48 z2 z2.local; do
+     curl -s -H "Host: $h" http://127.0.0.1/ | grep -o '<title>[^<]*'
+   done
+   ```
 
-### Database Not Found
+   Each should print the registry title. Then open http://192.168.2.48/ from
+   a phone on the LAN and http://z2/ from a tailnet device.
 
-The database is automatically created on first startup. If you encounter issues:
+Use http://z2/ as the tailnet entry point. HTTPS (443) on the bare MagicDNS
+name (`z2.<tailnet-name>.ts.net`) belongs to another service, and browsers that
+upgrade to HTTPS automatically would land there.
 
-```bash
-# Remove old database
-rm service_registry.db
-
-# Restart the application (database will be recreated)
-sudo systemctl restart service-registry
-```
-
-### Nginx 502 Bad Gateway
-
-If Nginx shows a 502 error:
-
-```bash
-# Check if service is running
-sudo systemctl status service-registry
-
-# Check service logs
-sudo journalctl -u service-registry -f
-
-# Restart service
-sudo systemctl restart service-registry
-```
-
-### Port Already in Use
-
-If port 8000 (or 80) is already in use:
-
-```bash
-# Find what's using the port
-sudo lsof -i :8000
-
-# Kill the process or change PORT in .env
-```
-
-## Contributing
-
-This project follows:
-- **SOLID principles**
-- **Test-driven development**
-- **Layered architecture**
-- **Repository pattern**
-
-## License
-
-MIT License - See LICENSE file for details
-
-## Author
-
-Built with Claude Code
-
----
-
-**Need help?** Open an issue at https://github.com/CAPeddle/service-registry/issues
+Logs: `sudo journalctl -u service-registry -f`.
