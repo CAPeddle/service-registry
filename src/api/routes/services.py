@@ -65,8 +65,9 @@ def register_service(
             held.append(field)
     if key.startswith("manual:"):
         fields["link_override"] = service_data.base_url
+    attempts = RegistrationAttemptRepository(db)
     if held:
-        RegistrationAttemptRepository(db).record(
+        attempts.record(
             key,
             name=name,
             description=service_data.description,
@@ -74,6 +75,8 @@ def register_service(
             health_endpoint=service_data.health_endpoint,
             held_fields=held,
         )
+    else:
+        attempts.delete_for(key)  # committed with the annotation below
     return repo.upsert(key, **fields)
 
 
@@ -82,9 +85,15 @@ def update_annotation(update: AnnotationUpdate, db: Session = Depends(get_db)) -
     """Create or change the annotation for one identity key; omitted fields are unchanged."""
     fields = update.model_dump(exclude_unset=True)
     key = fields.pop("identity_key")
+    cleared = []
     for field in PROTECTED_FIELDS:
         if field in fields:
             fields[f"{field}_from_page"] = fields[field] is not None
+            if fields[field] is None:
+                cleared.append(field)
+    if cleared:
+        # A cleared field is no longer protected, so a held value for it is moot.
+        RegistrationAttemptRepository(db).release(key, cleared)  # committed below
     return AnnotationRepository(db).upsert(key, **fields)
 
 
@@ -92,7 +101,8 @@ def update_annotation(update: AnnotationUpdate, db: Session = Depends(get_db)) -
 def delete_annotation(
     identity_key: str = Query(..., min_length=1), db: Session = Depends(get_db)
 ) -> Response:
-    """Remove the annotation for one identity key."""
+    """Remove the annotation for one identity key, and any registration held for it."""
+    RegistrationAttemptRepository(db).delete_for(identity_key)  # committed with the deletion
     if not AnnotationRepository(db).delete(identity_key):
         raise HTTPException(status_code=404, detail="Annotation not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -100,15 +110,24 @@ def delete_annotation(
 
 @router.post("/registrations/{attempt_id}/apply", response_model=AnnotationResponse)
 def apply_registration(attempt_id: int, db: Session = Depends(get_db)) -> Annotation:
-    """Use a held registration's values for its held fields; they stop being page-protected."""
+    """Use a held registration's values for its held fields; they stop being page-protected.
+
+    A field whose page protection has since been cleared is left as it is.
+    """
     attempts = RegistrationAttemptRepository(db)
     attempt = _attempt_or_404(attempts, attempt_id)
+    annotations = AnnotationRepository(db)
+    current = annotations.get(attempt.identity_key)
+    if current is None:
+        attempts.delete(attempt)
+        raise HTTPException(status_code=404, detail="Annotation not found")
     fields = {}
     for field in attempt.held_fields:
-        fields[field] = getattr(attempt, PROTECTED_FIELDS[field])
-        fields[f"{field}_from_page"] = False
+        if getattr(current, f"{field}_from_page"):
+            fields[field] = getattr(attempt, PROTECTED_FIELDS[field])
+            fields[f"{field}_from_page"] = False
     attempts.delete(attempt, commit=False)  # committed with the annotation below
-    return AnnotationRepository(db).upsert(attempt.identity_key, **fields)
+    return annotations.upsert(attempt.identity_key, **fields)
 
 
 @router.delete("/registrations/{attempt_id}", status_code=status.HTTP_204_NO_CONTENT)

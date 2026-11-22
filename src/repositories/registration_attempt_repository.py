@@ -1,5 +1,5 @@
 """Data access for registrations held for review."""
-from typing import Optional
+from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 from src.models.registration_attempt import RegistrationAttempt
 
@@ -33,3 +33,21 @@ class RegistrationAttemptRepository:
         self.session.delete(attempt)
         if commit:
             self.session.commit()
+
+    def delete_for(self, identity_key: str) -> None:
+        """Delete any pending entry for an identity key; the caller commits."""
+        self.session.query(RegistrationAttempt).filter_by(identity_key=identity_key).delete()
+
+    def release(self, identity_key: str, fields: Iterable[str]) -> None:
+        """Stop holding these fields for an identity key; the caller commits.
+
+        An entry left holding no field is deleted.
+        """
+        released = set(fields)
+        query = self.session.query(RegistrationAttempt).filter_by(identity_key=identity_key)
+        for attempt in query:
+            remaining = [field for field in attempt.held_fields if field not in released]
+            if remaining:
+                attempt.held_fields = remaining
+            else:
+                self.session.delete(attempt)

@@ -110,8 +110,7 @@ There is no login: anyone who can reach port 80 can edit annotations. nginx
 passes every Host to the app, so that the page answers on any address. To stop
 a malicious web page from rebinding its own domain name to the Z2's address
 and sending writes from the visitor's browser, write requests (POST, PUT,
-PATCH, DELETE) get `403` unless the `Host` header, and the `Origin` header if
-there is one, names a trusted host:
+PATCH, DELETE) get `403` unless the `Host` header names a trusted host:
 
 - an IP address (IPv4, or IPv6 in brackets)
 - a name without dots, such as `z2` or `localhost`
@@ -121,8 +120,23 @@ there is one, names a trusted host:
 - a name listed in the `TRUSTED_HOSTS` setting (comma-separated, from the
   environment or `.env`; empty by default)
 
-Ports are ignored and names are compared case-insensitively. Reads (GET, HEAD,
-OPTIONS) work under any Host.
+Ports are ignored and names are compared case-insensitively.
+
+A page on another site could still send writes to a trusted address from the
+visitor's browser, so a write request also gets `403` when:
+
+- it has an `Origin` header whose host is not the `Host` header's host (ports
+  ignored), or
+- it has a `Sec-Fetch-Site` header other than `same-origin` or `none`.
+
+A POST, PUT or PATCH with a body gets `415` unless its `Content-Type` is
+`application/json` (parameters such as `; charset=utf-8` are allowed): a
+cross-site form or simple fetch cannot send that type without a CORS
+preflight, which the app does not answer. Tools such as `curl` send neither
+`Origin` nor `Sec-Fetch-Site` and are not affected beyond the `Content-Type`
+rule.
+
+Reads (GET, HEAD, OPTIONS) work under any Host.
 
 ## Development
 
@@ -149,7 +163,7 @@ src/
     main.py                  FastAPI app
     routes/                  pages.py (landing page), services.py, health.py
     schemas/service_schema.py
-    dependencies/            services.py, trusted_host.py (write Host/Origin check)
+    dependencies/            services.py, trusted_host.py (write Host/Origin/type check)
     templates/               base.html, index.html
   services/
     discovery/               sockets, cgroups, units, docker_ports,

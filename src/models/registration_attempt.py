@@ -11,6 +11,8 @@ class RegistrationAttempt(Base):
     """The values a POST registration carried, kept for review on the landing page."""
 
     __tablename__ = "registration_attempts"
+    # Never reuse an id, so a button on a stale page cannot act on a newer registration.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True, index=True)
     identity_key = Column(String, nullable=False, index=True)

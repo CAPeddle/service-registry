@@ -125,6 +125,8 @@ own addresses: an IP address, a name without dots (`z2`), a `.local` name, the
 tailnet MagicDNS name, or a name in the `TRUSTED_HOSTS` setting. Anything else
 gets `403`, which blocks DNS-rebinding attacks from web pages. `curl
 http://z2/...`, `http://192.168.2.48/...` and `http://127.0.0.1/...` all work.
+A request body must be sent with `Content-Type: application/json`, or the
+request gets `415`. See the README's Security section for the browser checks.
 
 Identity keys look like `system:grafana-server.service`,
 `user:1000:myapp.service`, `docker:<project>/<service>`, `manual:<name>` and

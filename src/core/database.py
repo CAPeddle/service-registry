@@ -63,7 +63,23 @@ def init_db(
     """Initialize database by creating all tables and importing old entries."""
     engine = engine or default_engine
     Base.metadata.create_all(bind=engine)
+    add_missing_annotation_columns(engine)
     import_configured_services(engine, user_unit_exists)
+
+
+# Columns added to annotations after its first release; create_all does not add them.
+_ADDED_ANNOTATION_COLUMNS = ("description_from_page", "health_path_from_page")
+
+
+def add_missing_annotation_columns(engine: Engine) -> None:
+    """Add columns that an annotations table created by an earlier build lacks."""
+    existing = {column["name"] for column in inspect(engine).get_columns("annotations")}
+    with engine.begin() as conn:
+        for name in _ADDED_ANNOTATION_COLUMNS:
+            if name not in existing:
+                conn.execute(
+                    text(f"ALTER TABLE annotations ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT 0")
+                )
 
 
 def drop_db():

@@ -1,4 +1,6 @@
-"""Write requests must come from a trusted Host (and Origin), so DNS rebinding cannot write."""
+"""Write requests must come from a trusted Host and the same origin, so other sites cannot write."""
+import json
+
 import pytest
 from fastapi import Depends
 from fastapi.testclient import TestClient
@@ -116,9 +118,97 @@ def test_untrusted_origin_is_forbidden_even_from_a_trusted_host(client, origin):
     assert edit(client, "192.168.2.48", origin=origin) == 403
 
 
-@pytest.mark.parametrize("origin", ["http://192.168.2.48", "http://z2", f"https://{FQDN}"])
-def test_trusted_origin_is_allowed(client, origin):
-    assert edit(client, "192.168.2.48", origin=origin) == 200
+@pytest.mark.parametrize(
+    "host, origin",
+    [
+        ("192.168.2.48", "http://192.168.2.48"),
+        ("z2", "http://z2"),
+        ("z2:80", "http://z2:8080"),
+        ("Z2", "http://z2"),
+        ("[fd4e::1]:80", "http://[fd4e::1]"),
+        (FQDN, f"https://{FQDN}"),
+    ],
+)
+def test_origin_naming_the_request_host_is_allowed(client, host, origin):
+    assert edit(client, host, origin=origin) == 200
+
+
+@pytest.mark.parametrize(
+    "host, origin",
+    [
+        ("192.168.2.48", "http://203.0.113.5"),
+        ("192.168.2.48", "http://z2"),
+        ("z2", "http://192.168.2.48"),
+        ("192.168.2.48", f"https://{FQDN}"),
+    ],
+)
+def test_origin_naming_another_trusted_host_is_forbidden(client, host, origin):
+    assert edit(client, host, origin=origin) == 403
+
+
+@pytest.mark.parametrize("site", ["cross-site", "same-site", "junk"])
+def test_cross_site_fetch_is_forbidden_even_with_matching_host_and_origin(client, site):
+    headers = {"Host": "z2", "Origin": "http://z2", "Sec-Fetch-Site": site}
+    response = client.put("/api/services/annotation", json=EDIT, headers=headers)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("site", ["same-origin", "none"])
+def test_same_origin_or_user_initiated_fetch_is_allowed(client, site):
+    headers = {"Host": "z2", "Origin": "http://z2", "Sec-Fetch-Site": site}
+    response = client.put("/api/services/annotation", json=EDIT, headers=headers)
+
+    assert response.status_code == 200
+
+
+REGISTRATION = {"name": "printer", "description": "d", "base_url": "http://printer.lan/"}
+
+
+@pytest.mark.parametrize("content_type", [None, "text/plain", "application/x-www-form-urlencoded"])
+def test_a_write_body_that_is_not_declared_json_is_rejected(client, content_type):
+    headers = {} if content_type is None else {"Content-Type": content_type}
+    body = json.dumps(REGISTRATION)
+
+    response = client.post("/api/services", content=body, headers=headers)
+
+    assert response.status_code == 415
+    assert client.get("/api/services").json() == []
+
+
+def test_a_chunked_write_body_must_be_declared_json(client):
+    body = json.dumps(EDIT).encode()
+
+    response = client.put("/api/services/annotation", content=iter([body]))
+
+    assert response.status_code == 415
+
+
+@pytest.mark.parametrize("content_type", ["application/json", "Application/JSON; charset=utf-8"])
+def test_a_write_body_declared_json_is_accepted(client, content_type):
+    body = json.dumps(REGISTRATION)
+
+    response = client.post("/api/services", content=body, headers={"Content-Type": content_type})
+
+    assert response.status_code == 201
+
+
+def test_bodyless_write_from_a_foreign_origin_is_forbidden(client):
+    for headers in (
+        {"Host": "192.168.2.48", "Origin": "http://203.0.113.5"},
+        {"Host": "192.168.2.48", "Sec-Fetch-Site": "cross-site"},
+    ):
+        response = client.post("/api/services/registrations/1/apply", headers=headers)
+        assert response.status_code == 403
+
+
+def test_the_landing_page_requests_pass(client):
+    """The page's own fetch calls: same origin, JSON bodies, bodyless apply and dismiss."""
+    page = {"Host": "z2:8000", "Origin": "http://z2:8000", "Sec-Fetch-Site": "same-origin"}
+
+    assert client.put("/api/services/annotation", json=EDIT, headers=page).status_code == 200
+    assert client.post("/api/services/registrations/1/apply", headers=page).status_code == 404
+    assert client.delete("/api/services/registrations/1", headers=page).status_code == 404
 
 
 def test_every_write_route_is_checked(client):
@@ -148,7 +238,8 @@ def test_configured_trusted_hosts_are_allowed(client, monkeypatch):
     monkeypatch.setattr(settings, "trusted_hosts", " registry.example.org , Other.Example ")
 
     assert edit(client, "registry.example.org") == 200
-    assert edit(client, "other.example:80", origin="http://registry.example.org") == 200
+    assert edit(client, "other.example:80") == 200
+    assert edit(client, "Registry.example.org:80", origin="http://registry.example.org") == 200
     assert edit(client, "evil.example") == 403
 
 

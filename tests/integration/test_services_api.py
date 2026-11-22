@@ -539,3 +539,104 @@ def test_unknown_held_registration_is_404(client):
     ):
         assert response.status_code == 404
         assert response.json() == {"detail": "Held registration not found"}
+
+
+FINANCE_KEY = "system:finance-tracker.service"
+FINANCE_REGISTRATION = {
+    "name": "finance-tracker.service",
+    "description": "Finance tracker",
+    "base_url": "http://127.0.0.1:8001",
+}
+
+
+def test_held_registration_ids_are_not_reused(client):
+    page_edit(client, description="Mine")
+    client.post("/api/services", json=AH_REGISTRATION)
+    [first] = held()
+    client.delete(f"/api/services/registrations/{first.id}")
+    client.put("/api/services/annotation", json={"identity_key": FINANCE_KEY, "description": "Own"})
+
+    assert client.post("/api/services", json=FINANCE_REGISTRATION).status_code == 201
+
+    [second] = held()
+    assert second.identity_key == FINANCE_KEY
+    assert second.id != first.id
+    assert client.post(f"/api/services/registrations/{first.id}/apply").status_code == 404
+
+
+def test_a_registration_that_holds_nothing_removes_the_pending_one(client):
+    page_edit(client, description="Mine")
+    client.post("/api/services", json=AH_REGISTRATION)
+    assert len(held()) == 1
+
+    client.post("/api/services", json={**AH_REGISTRATION, "description": "Mine"})
+
+    assert held() == []
+
+
+def test_clearing_a_held_field_on_the_page_releases_it_from_the_pending_registration(client):
+    page_edit(client, description="Mine", health_path="/ready")
+    client.post("/api/services", json=AH_REGISTRATION)
+
+    page_edit(client, health_path="")
+
+    [attempt] = held()
+    assert attempt.held_fields == ["description"]
+
+    page_edit(client, description="")
+
+    assert held() == []
+
+
+def test_using_held_values_after_protection_was_cleared_does_not_roll_back(client):
+    page_edit(client, description="Mine", health_path="/ready")
+    client.post("/api/services", json=AH_REGISTRATION)
+    [attempt] = held()
+    page_edit(client, health_path="")
+
+    response = client.post(f"/api/services/registrations/{attempt.id}/apply")
+
+    assert response.status_code == 200
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("Albert Heijn connector", None)
+    assert held() == []
+
+
+def test_using_held_values_skips_fields_no_longer_protected(client):
+    page_edit(client, description="Mine", health_path="/ready")
+    client.post("/api/services", json=AH_REGISTRATION)
+    [attempt] = held()
+    annotate(AH_KEY, health_path="/live", health_path_from_page=False)
+
+    client.post(f"/api/services/registrations/{attempt.id}/apply")
+
+    note = stored(AH_KEY)
+    assert (note.description, note.health_path) == ("Albert Heijn connector", "/live")
+    assert held() == []
+
+
+def test_deleting_an_annotation_removes_its_pending_registration(client):
+    page_edit(client, description="Mine")
+    client.post("/api/services", json=AH_REGISTRATION)
+
+    client.delete("/api/services/annotation", params={"identity_key": AH_KEY})
+
+    assert held() == []
+
+
+def test_using_held_values_for_a_deleted_annotation_is_404(client):
+    page_edit(client, description="Mine")
+    client.post("/api/services", json=AH_REGISTRATION)
+    [attempt] = held()
+    session = SessionLocal()
+    try:
+        AnnotationRepository(session).delete(AH_KEY)
+    finally:
+        session.close()
+
+    response = client.post(f"/api/services/registrations/{attempt.id}/apply")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Annotation not found"}
+    assert stored(AH_KEY) is None
+    assert held() == []
