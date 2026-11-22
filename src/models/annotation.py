@@ -13,7 +13,8 @@ class Annotation(Base):
     identity_key = Column(String, unique=True, nullable=False, index=True)
     display_name = Column(String, nullable=True)
     description = Column(String, nullable=True)
-    hidden = Column(Boolean, nullable=False, default=False)
+    # None: use the default (hidden only when on the noise list); True/False: user choice.
+    hidden = Column(Boolean, nullable=True, default=None)
     link_override = Column(String, nullable=True)
     health_path = Column(String, nullable=True)
     primary_port = Column(Integer, nullable=True)

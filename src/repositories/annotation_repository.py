@@ -24,7 +24,7 @@ class AnnotationRepository:
             raise TypeError(f"Unknown annotation fields: {sorted(unknown)}")
         annotation = self.get(identity_key)
         if annotation is None:
-            annotation = Annotation(identity_key=identity_key, hidden=False)
+            annotation = Annotation(identity_key=identity_key)
             self.session.add(annotation)
         for name, value in fields.items():
             setattr(annotation, name, value)

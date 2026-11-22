@@ -46,7 +46,7 @@ def import_configured_services(engine: Engine, unit_exists: Callable[[str], bool
                 key = f"manual:{name}"
             conn.execute(text(
                 "INSERT INTO annotations (identity_key, description, health_path, hidden, created_at, updated_at) "
-                "VALUES (:key, :description, :health, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                "VALUES (:key, :description, :health, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ), {"key": key, "description": description, "health": health})
 
 

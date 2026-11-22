@@ -35,3 +35,9 @@ def test_set_hidden_on_unknown_key_creates_minimal_annotation(repo):
     assert annotation.display_name is None
     assert annotation.link_override is None
     assert repo.get("docker:media/plex") is not None
+
+
+def test_new_annotation_leaves_hidden_unset(repo):
+    annotation = repo.upsert("docker:media/plex", description="Plex")
+
+    assert annotation.hidden is None
