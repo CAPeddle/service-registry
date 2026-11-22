@@ -22,7 +22,10 @@ DEFAULT_LAN_SUBNET = "192.168.2.0/24"
 
 # Split on the action rather than on columns: a long To such as
 # "8001/tcp (v6) on tailscale0" runs into the Action column.
-_RULE = re.compile(r"^(?P<to>.+?)\s+(?P<action>ALLOW|DENY|REJECT|LIMIT)(?:\s+(?P<direction>IN|OUT|FWD))?\s+(?P<source>.+)$")
+_RULE = re.compile(
+    r"^(?P<to>.+?)\s+(?P<action>ALLOW|DENY|REJECT|LIMIT)"
+    r"(?:\s+(?P<direction>IN|OUT|FWD))?\s+(?P<source>.+)$"
+)
 _PORTS = re.compile(r"^(?P<ports>[\d,:]+)(?:/(?P<proto>tcp|udp))?$")
 
 
@@ -73,9 +76,9 @@ def _admitted_ranges(
         return []
     if "on" in to:
         index = to.index("on")
-        if to[index + 1:index + 2] != [lan_interface]:
+        if to[index + 1 : index + 2] != [lan_interface]:
             return []
-        to = to[:index] + to[index + 2:]
+        to = to[:index] + to[index + 2 :]
     if len(to) != 1 or not _from_lan(source[0] if source else "", lan):
         return []
     if to[0] == "Anywhere":

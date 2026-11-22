@@ -33,10 +33,12 @@ def import_configured_services(engine: Engine, unit_exists: Callable[[str], bool
     with engine.begin() as conn:
         if conn.execute(text("SELECT COUNT(*) FROM annotations")).scalar():
             return
-        rows = conn.execute(text(
-            "SELECT name, description, health_endpoint, systemd_state FROM services "
-            "WHERE status = 'CONFIGURED'"
-        )).all()
+        rows = conn.execute(
+            text(
+                "SELECT name, description, health_endpoint, systemd_state FROM services "
+                "WHERE status = 'CONFIGURED'"
+            )
+        ).all()
         for name, description, health, systemd_state in rows:
             if systemd_state != "unknown":
                 key = f"system:{name}"
@@ -44,13 +46,20 @@ def import_configured_services(engine: Engine, unit_exists: Callable[[str], bool
                 key = f"user:{USER_UID}:{name}"
             else:
                 key = f"manual:{name}"
-            conn.execute(text(
-                "INSERT INTO annotations (identity_key, description, health_path, hidden, created_at, updated_at) "
-                "VALUES (:key, :description, :health, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            ), {"key": key, "description": description, "health": health})
+            conn.execute(
+                text(
+                    "INSERT INTO annotations (identity_key, description, health_path, hidden, "
+                    "created_at, updated_at) "
+                    "VALUES (:key, :description, :health, NULL, "
+                    "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {"key": key, "description": description, "health": health},
+            )
 
 
-def init_db(engine: Optional[Engine] = None, user_unit_exists: Callable[[str], bool] = user_unit_exists):
+def init_db(
+    engine: Optional[Engine] = None, user_unit_exists: Callable[[str], bool] = user_unit_exists
+):
     """Initialize database by creating all tables and importing old entries."""
     engine = engine or default_engine
     Base.metadata.create_all(bind=engine)

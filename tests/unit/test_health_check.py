@@ -1,8 +1,15 @@
 """Tests for health check service."""
-import pytest
+import socket
+import threading
+import time
+from collections import Counter
 from unittest.mock import Mock, patch
+
 import httpx
-from src.services.health_check import HealthCheckService, HealthStatus
+import pytest
+
+from src.api.dependencies.services import get_health_check_service
+from src.services.health_check import HealthCheckService, ProbeRequest
 
 
 @pytest.fixture
@@ -11,7 +18,7 @@ def health_checker():
     return HealthCheckService(timeout=2.0, cache_ttl=60)
 
 
-@patch('httpx.get')
+@patch("httpx.get")
 def test_check_health_success(mock_get, health_checker):
     """Test successful health check."""
     mock_response = Mock()
@@ -25,7 +32,7 @@ def test_check_health_success(mock_get, health_checker):
     mock_get.assert_called_once_with("http://localhost:8080/health", timeout=2.0)
 
 
-@patch('httpx.get')
+@patch("httpx.get")
 def test_check_health_non_200_response(mock_get, health_checker):
     """Test health check with non-200 response."""
     mock_response = Mock()
@@ -38,7 +45,7 @@ def test_check_health_non_200_response(mock_get, health_checker):
     assert status.status_code == 503
 
 
-@patch('httpx.get')
+@patch("httpx.get")
 def test_check_health_timeout(mock_get, health_checker):
     """Test health check with timeout."""
     mock_get.side_effect = httpx.TimeoutException("Timeout")
@@ -50,7 +57,7 @@ def test_check_health_timeout(mock_get, health_checker):
     assert status.error == "Timeout"
 
 
-@patch('httpx.get')
+@patch("httpx.get")
 def test_check_health_connection_error(mock_get, health_checker):
     """Test health check with connection error."""
     mock_get.side_effect = httpx.ConnectError("Connection refused")
@@ -76,14 +83,6 @@ def test_build_health_url():
 
 
 # --- Concurrent probes against real local servers -------------------------
-
-import socket
-import threading
-import time
-from collections import Counter
-
-from src.services.health_check import ProbeRequest, ProbeResult
-from src.api.dependencies.services import get_health_check_service
 
 
 class LocalServer:
@@ -127,8 +126,7 @@ class LocalServer:
 
 
 def _http(status: int) -> bytes:
-    return (f"HTTP/1.1 {status} X\r\nContent-Length: 0\r\n"
-            f"Connection: close\r\n\r\n").encode()
+    return (f"HTTP/1.1 {status} X\r\nContent-Length: 0\r\n" f"Connection: close\r\n\r\n").encode()
 
 
 def _routes(server, conn, path):
@@ -142,8 +140,7 @@ def _routes(server, conn, path):
 
 def _reset(server, conn, path):
     # Abortive close sends RST instead of FIN
-    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
-                    b"\x01\x00\x00\x00\x00\x00\x00\x00")
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b"\x01\x00\x00\x00\x00\x00\x00\x00")
 
 
 def _garbage(server, conn, path):

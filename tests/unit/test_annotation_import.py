@@ -1,5 +1,4 @@
 """Tests for the one-time import of configured services into annotations."""
-import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from src.core.database import init_db
@@ -10,25 +9,43 @@ def make_engine(rows=()):
     """Engine with an old-style services table holding the given rows."""
     engine = create_engine("sqlite://")
     with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE services (id INTEGER PRIMARY KEY, name VARCHAR NOT NULL UNIQUE, "
-            "description VARCHAR, port INTEGER, health_endpoint VARCHAR, base_url VARCHAR, "
-            "status VARCHAR NOT NULL, systemd_state VARCHAR NOT NULL, last_scanned_at DATETIME, "
-            "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
-            "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-        ))
+        conn.execute(
+            text(
+                "CREATE TABLE services (id INTEGER PRIMARY KEY, name VARCHAR NOT NULL UNIQUE, "
+                "description VARCHAR, port INTEGER, health_endpoint VARCHAR, base_url VARCHAR, "
+                "status VARCHAR NOT NULL, systemd_state VARCHAR NOT NULL, "
+                "last_scanned_at DATETIME, "
+                "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            )
+        )
         for r in rows:
-            conn.execute(text(
-                "INSERT INTO services (name, description, port, health_endpoint, base_url, status, systemd_state) "
-                "VALUES (:name, :description, :port, :health_endpoint, :base_url, :status, :systemd_state)"
-            ), {"port": None, "health_endpoint": None, "base_url": None, "description": None, **r})
+            conn.execute(
+                text(
+                    "INSERT INTO services (name, description, port, health_endpoint, base_url, "
+                    "status, systemd_state) VALUES (:name, :description, :port, "
+                    ":health_endpoint, :base_url, :status, :systemd_state)"
+                ),
+                {"port": None, "health_endpoint": None, "base_url": None, "description": None, **r},
+            )
     return engine
 
 
-FINANCE = dict(name="finance-tracker.service", description="Finance tracker", port=8001,
-               base_url="http://192.168.2.24:8001", status="CONFIGURED", systemd_state="active")
-AH = dict(name="ah-connector.service", description="AH connector", health_endpoint="/health",
-          status="CONFIGURED", systemd_state="unknown")
+FINANCE = dict(
+    name="finance-tracker.service",
+    description="Finance tracker",
+    port=8001,
+    base_url="http://192.168.2.24:8001",
+    status="CONFIGURED",
+    systemd_state="active",
+)
+AH = dict(
+    name="ah-connector.service",
+    description="AH connector",
+    health_endpoint="/health",
+    status="CONFIGURED",
+    systemd_state="unknown",
+)
 
 
 def annotations(engine):
@@ -70,11 +87,16 @@ def test_api_registered_row_becomes_manual_when_no_user_unit():
 
 def test_second_startup_keeps_user_edits_and_adds_no_duplicates():
     engine = make_engine([FINANCE, AH])
-    exists = lambda name: True
+
+    def exists(name):
+        return True
+
     init_db(engine, user_unit_exists=exists)
 
     session = sessionmaker(bind=engine)()
-    AnnotationRepository(session).upsert("system:finance-tracker.service", description="Edited", hidden=True)
+    AnnotationRepository(session).upsert(
+        "system:finance-tracker.service", description="Edited", hidden=True
+    )
     session.close()
 
     init_db(engine, user_unit_exists=exists)
@@ -93,10 +115,12 @@ def test_fresh_database_without_services_table_has_no_annotations():
 
 
 def test_raw_and_discovered_rows_are_not_imported():
-    engine = make_engine([
-        dict(name="cron.service", status="RAW", systemd_state="active"),
-        dict(name="web.service", status="DISCOVERED", systemd_state="active", port=80),
-    ])
+    engine = make_engine(
+        [
+            dict(name="cron.service", status="RAW", systemd_state="active"),
+            dict(name="web.service", status="DISCOVERED", systemd_state="active", port=80),
+        ]
+    )
     init_db(engine, user_unit_exists=lambda name: True)
 
     assert annotations(engine) == {}

@@ -19,4 +19,9 @@ class Annotation(Base):
     health_path = Column(String, nullable=True)
     primary_port = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )

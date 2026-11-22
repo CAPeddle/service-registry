@@ -46,11 +46,20 @@ def _capture_argv(monkeypatch):
 def test_system_unit_argv(monkeypatch):
     calls = _capture_argv(monkeypatch)
     assert show_unit("finance-tracker.service").state == "active"
-    assert calls == [(
-        "systemctl", "show",
-        "-p", "Description", "-p", "ActiveState", "-p", "LoadState",
-        "--", "finance-tracker.service",
-    )]
+    assert calls == [
+        (
+            "systemctl",
+            "show",
+            "-p",
+            "Description",
+            "-p",
+            "ActiveState",
+            "-p",
+            "LoadState",
+            "--",
+            "finance-tracker.service",
+        )
+    ]
 
 
 def test_user_unit_argv_resolves_user_name(monkeypatch):
@@ -58,11 +67,23 @@ def test_user_unit_argv_resolves_user_name(monkeypatch):
     uid = os.getuid()
     name = pwd.getpwuid(uid).pw_name
     show_unit("groceries-web.service", uid=uid)
-    assert calls == [(
-        "systemctl", "--user", "-M", f"{name}@", "show",
-        "-p", "Description", "-p", "ActiveState", "-p", "LoadState",
-        "--", "groceries-web.service",
-    )]
+    assert calls == [
+        (
+            "systemctl",
+            "--user",
+            "-M",
+            f"{name}@",
+            "show",
+            "-p",
+            "Description",
+            "-p",
+            "ActiveState",
+            "-p",
+            "LoadState",
+            "--",
+            "groceries-web.service",
+        )
+    ]
 
 
 def test_unknown_uid_is_an_error():

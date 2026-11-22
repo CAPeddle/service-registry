@@ -89,9 +89,7 @@ def test_lan_subnet_is_a_parameter(fixture_text):
 
 
 def test_outbound_and_forward_rules_do_not_admit():
-    firewall = parse_ufw_status(
-        HEADER + "80/tcp ALLOW OUT Anywhere\n81/tcp ALLOW FWD Anywhere\n"
-    )
+    firewall = parse_ufw_status(HEADER + "80/tcp ALLOW OUT Anywhere\n81/tcp ALLOW FWD Anywhere\n")
     assert firewall.admits_lan(80) is False
     assert firewall.admits_lan(81) is False
 

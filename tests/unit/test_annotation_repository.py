@@ -17,7 +17,9 @@ def repo():
 
 def test_upsert_existing_key_updates_in_place(repo):
     first = repo.upsert("system:nginx.service", display_name="Web", primary_port=80)
-    second = repo.upsert("system:nginx.service", display_name="Proxy", link_override="http://z2:8080")
+    second = repo.upsert(
+        "system:nginx.service", display_name="Proxy", link_override="http://z2:8080"
+    )
 
     assert second.id == first.id
     assert len(repo.list()) == 1

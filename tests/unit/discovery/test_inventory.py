@@ -38,8 +38,14 @@ def user(unit, uid=1000):
 
 
 def annotation(identity_key, **fields):
-    values = dict(display_name=None, description=None, hidden=None,
-                  link_override=None, health_path=None, primary_port=None)
+    values = dict(
+        display_name=None,
+        description=None,
+        hidden=None,
+        link_override=None,
+        health_path=None,
+        primary_port=None,
+    )
     values.update(fields)
     return SimpleNamespace(identity_key=identity_key, **values)
 
@@ -60,14 +66,18 @@ def make_sources(
         return cgroups.get(pid, Unattributed("/init.scope"))
 
     def show_unit(unit, uid=None):
-        return units.get((unit, uid), UnitStatus(description="", active_state="active", load_state="loaded"))
+        return units.get(
+            (unit, uid), UnitStatus(description="", active_state="active", load_state="loaded")
+        )
 
     return Sources(
         list_sockets=lambda: sockets if isinstance(sockets, SourceError) else list(sockets),
         read_cgroup=read_cgroup,
         list_published_ports=lambda: {} if docker is None else docker,
         list_serve_mappings=lambda: [] if serve is None else serve,
-        read_firewall=lambda: LanFirewall(active=True, admitted=()) if firewall is None else firewall,
+        read_firewall=lambda: LanFirewall(active=True, admitted=())
+        if firewall is None
+        else firewall,
         show_unit=show_unit,
     )
 
@@ -112,7 +122,11 @@ def test_serve_front_ends_appear_only_as_tailnet_paths_on_their_backend_rows():
             sock("127.0.0.1", 8790, "uvicorn", 10),
             sock("127.0.0.1", 3000, "node", 11),
         ],
-        cgroups={7: system("tailscaled.service"), 10: system("awcp.service"), 11: user("clockme.service")},
+        cgroups={
+            7: system("tailscaled.service"),
+            10: system("awcp.service"),
+            11: user("clockme.service"),
+        },
         serve=[
             ServeMapping(443, f"https://{FQDN}/", "127.0.0.1", 8790),
             ServeMapping(8443, f"https://{FQDN}:8443/", "localhost", 3000),
@@ -120,10 +134,13 @@ def test_serve_front_ends_appear_only_as_tailnet_paths_on_their_backend_rows():
     )
 
     assert {row.identity_key for row in inventory.rows} == {
-        "system:awcp.service", "user:1000:clockme.service"}
+        "system:awcp.service",
+        "user:1000:clockme.service",
+    }
     assert paths(inventory.row("system:awcp.service")) == {(8790, "tailnet", f"https://{FQDN}/")}
     assert paths(inventory.row("user:1000:clockme.service")) == {
-        (3000, "tailnet", f"https://{FQDN}:8443/")}
+        (3000, "tailnet", f"https://{FQDN}:8443/")
+    }
     assert inventory.row("system:awcp.service").group == "tailnet"
 
 
@@ -248,7 +265,9 @@ def test_annotated_primary_port_wins():
 
 
 def test_first_process_with_a_unit_attributes_a_shared_socket():
-    socket = ListeningSocket("0.0.0.0", 2222, None, (SocketProcess("systemd", 1), SocketProcess("sshd", 9)))
+    socket = ListeningSocket(
+        "0.0.0.0", 2222, None, (SocketProcess("systemd", 1), SocketProcess("sshd", 9))
+    )
     inventory = inventory_for(sockets=[socket], cgroups={9: system("ssh.service")})
 
     assert [row.identity_key for row in inventory.rows] == ["system:ssh.service"]
@@ -305,12 +324,15 @@ def test_annotation_hidden_flag_hides_a_row():
     assert row.hidden and not row.suppressed
 
 
-@pytest.mark.parametrize("active_state, load_state, expected", [
-    ("failed", "loaded", "failed"),
-    ("inactive", "loaded", "inactive"),
-    ("active", "loaded", "running without a port"),
-    ("inactive", "not-found", "not found"),
-])
+@pytest.mark.parametrize(
+    "active_state, load_state, expected",
+    [
+        ("failed", "loaded", "failed"),
+        ("inactive", "loaded", "inactive"),
+        ("active", "loaded", "running without a port"),
+        ("inactive", "not-found", "not found"),
+    ],
+)
 def test_annotated_unit_without_a_listener_shows_its_unit_state(active_state, load_state, expected):
     inventory = inventory_for(
         [annotation("system:gone.service"), annotation("user:1000:gone.service")],
@@ -339,7 +361,11 @@ def test_manual_identity_shows_its_link_override_with_unknown_state():
     inventory = inventory_for([annotation("manual:printer", link_override="http://printer.lan/")])
 
     row = inventory.row("manual:printer")
-    assert (row.origin, row.state, row.link_override) == ("manual", "unknown", "http://printer.lan/")
+    assert (row.origin, row.state, row.link_override) == (
+        "manual",
+        "unknown",
+        "http://printer.lan/",
+    )
     assert row.display_name == "printer"
 
 
@@ -398,10 +424,13 @@ def test_firewall_failure_makes_wildcard_lan_paths_unknown():
     assert row.group == "unknown"
 
 
-@pytest.mark.parametrize("firewall", [
-    LanFirewall(active=True, admitted=()),
-    SourceError("firewall", "ufw exited 1"),
-])
+@pytest.mark.parametrize(
+    "firewall",
+    [
+        LanFirewall(active=True, admitted=()),
+        SourceError("firewall", "ufw exited 1"),
+    ],
+)
 def test_docker_published_wildcard_port_skips_the_firewall(firewall):
     inventory = inventory_for(
         sockets=[sock("0.0.0.0", 8080, "docker-proxy", 50)],
@@ -444,16 +473,25 @@ class CountingSources:
             sockets=[sock("127.0.0.1", 9000, "app", 5)],
             cgroups={5: system("app.service")},
         )
-        self.sources = Sources(**{
-            name: self._counted(getattr(base, name))
-            for name in ("list_sockets", "read_cgroup", "list_published_ports",
-                         "list_serve_mappings", "read_firewall", "show_unit")
-        })
+        self.sources = Sources(
+            **{
+                name: self._counted(getattr(base, name))
+                for name in (
+                    "list_sockets",
+                    "read_cgroup",
+                    "list_published_ports",
+                    "list_serve_mappings",
+                    "read_firewall",
+                    "show_unit",
+                )
+            }
+        )
 
     def _counted(self, fn):
         def wrapper(*args, **kwargs):
             self.calls += 1
             return fn(*args, **kwargs)
+
         return wrapper
 
 

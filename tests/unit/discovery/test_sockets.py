@@ -78,9 +78,7 @@ def test_interface_scoped_ipv4_bind(sockets):
 
 def test_interface_scoped_ipv6_bind_has_brackets_stripped(sockets):
     v6 = [s for s in _on_port(sockets, 443) if ":" in s.address]
-    assert [(s.address, s.interface) for s in v6] == [
-        ("fd7a:115c:a1e0::5536:c074", "tailscale0")
-    ]
+    assert [(s.address, s.interface) for s in v6] == [("fd7a:115c:a1e0::5536:c074", "tailscale0")]
 
 
 def test_loopback_scoped_resolver(sockets):

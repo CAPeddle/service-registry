@@ -42,7 +42,9 @@ def test_user_manager_itself_is_unattributed():
 
 def test_init_scope_and_session_scope_are_unattributed():
     assert parse_cgroup("0::/init.scope\n") == Unattributed(path="/init.scope")
-    assert isinstance(parse_cgroup("0::/user.slice/user-1000.slice/session-5.scope\n"), Unattributed)
+    assert isinstance(
+        parse_cgroup("0::/user.slice/user-1000.slice/session-5.scope\n"), Unattributed
+    )
 
 
 def test_template_instance_inside_a_sub_slice():

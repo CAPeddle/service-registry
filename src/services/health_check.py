@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, UTC
 @dataclass
 class HealthStatus:
     """Health check result."""
+
     is_healthy: bool
     status_code: Optional[int] = None
     error: Optional[str] = None
@@ -23,6 +24,7 @@ class HealthStatus:
 @dataclass(frozen=True)
 class ProbeRequest:
     """One port to probe, with an optional health path to check."""
+
     port: int
     health_path: Optional[str] = None
 
@@ -34,6 +36,7 @@ class ProbeResult:
     is_http is None and checking_failed is True when the probe did not
     finish in time. health is None when no health path was requested.
     """
+
     is_http: Optional[bool] = None
     health: Optional[HealthStatus] = None
     checking_failed: bool = False
@@ -77,9 +80,7 @@ class HealthCheckService:
             path = f"/{path}"
         return f"http://127.0.0.1:{port}{path}"
 
-    async def probe_batch(
-        self, requests: list[ProbeRequest]
-    ) -> dict[ProbeRequest, ProbeResult]:
+    async def probe_batch(self, requests: list[ProbeRequest]) -> dict[ProbeRequest, ProbeResult]:
         """Probe all requests concurrently within one shared time budget.
 
         Probes still running when the budget ends are cancelled and reported
@@ -88,10 +89,7 @@ class HealthCheckService:
         unique = list(dict.fromkeys(requests))
         results: dict[ProbeRequest, ProbeResult] = {}
         async with httpx.AsyncClient(follow_redirects=False) as client:
-            tasks = {
-                asyncio.ensure_future(self._probe_one(client, req)): req
-                for req in unique
-            }
+            tasks = {asyncio.ensure_future(self._probe_one(client, req)): req for req in unique}
             done, pending = await asyncio.wait(tasks, timeout=self.budget)
             for task in pending:
                 task.cancel()
@@ -104,9 +102,7 @@ class HealthCheckService:
                 results[req] = ProbeResult(checking_failed=True)
         return results
 
-    async def _probe_one(
-        self, client: httpx.AsyncClient, req: ProbeRequest
-    ) -> ProbeResult:
+    async def _probe_one(self, client: httpx.AsyncClient, req: ProbeRequest) -> ProbeResult:
         is_http, health = await asyncio.gather(
             self._probe_http(client, req.port),
             self._probe_health(client, req),
@@ -173,8 +169,7 @@ class HealthCheckService:
         try:
             response = httpx.get(url, timeout=self.timeout)
             status = HealthStatus(
-                is_healthy=response.status_code == 200,
-                status_code=response.status_code
+                is_healthy=response.status_code == 200, status_code=response.status_code
             )
         except httpx.TimeoutException:
             status = HealthStatus(is_healthy=False, error="Timeout")
@@ -200,8 +195,8 @@ class HealthCheckService:
         if health_endpoint is None:
             return None
 
-        base = base_url.rstrip('/')
-        endpoint = health_endpoint if health_endpoint.startswith('/') else f'/{health_endpoint}'
+        base = base_url.rstrip("/")
+        endpoint = health_endpoint if health_endpoint.startswith("/") else f"/{health_endpoint}"
         return f"{base}{endpoint}"
 
 

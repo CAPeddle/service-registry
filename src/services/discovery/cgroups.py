@@ -47,7 +47,7 @@ def parse_cgroup(text: str) -> UnitRef | Unattributed:
 
     manager = _USER_MANAGER.fullmatch(name)
     if manager:
-        inner = _first_below_slices(segments[index + 1:])
+        inner = _first_below_slices(segments[index + 1 :])
         if inner and inner[1].endswith(".service"):
             return UnitRef(scope="user", unit=inner[1], uid=int(manager.group(1)))
         return Unattributed(path)

@@ -22,9 +22,7 @@ _SERVICE_LABEL = "com.docker.compose.service"
 
 # "127.0.0.1:3000->3000/tcp", ":::8080->80/tcp", "[::]:8080->80/tcp",
 # "0.0.0.0:8000-8001->8000-8001/tcp"
-_PUBLISHED = re.compile(
-    r"^(?P<host>.*):(?P<first>\d+)(?:-(?P<last>\d+))?->[\d-]+/(?P<proto>\w+)$"
-)
+_PUBLISHED = re.compile(r"^(?P<host>.*):(?P<first>\d+)(?:-(?P<last>\d+))?->[\d-]+/(?P<proto>\w+)$")
 
 
 @dataclass(frozen=True)

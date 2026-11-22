@@ -16,8 +16,14 @@ FQDN = "z2.example-tailnet.ts.net"
 
 
 def annotation(identity_key, **fields):
-    values = dict(display_name=None, description=None, hidden=False,
-                  link_override=None, health_path=None, primary_port=None)
+    values = dict(
+        display_name=None,
+        description=None,
+        hidden=False,
+        link_override=None,
+        health_path=None,
+        primary_port=None,
+    )
     values.update(fields)
     return SimpleNamespace(identity_key=identity_key, **values)
 
@@ -49,7 +55,9 @@ def inventory(fixture_text):
         list_published_ports=lambda: parse_docker_ps(fixture_text("docker-ps.jsonl")),
         list_serve_mappings=lambda: parse_serve_status(fixture_text("tailscale-serve.json")),
         read_firewall=lambda: parse_ufw_status(fixture_text("ufw-status.txt")),
-        show_unit=lambda unit, uid=None: UnitStatus(description="", active_state="active", load_state="loaded"),
+        show_unit=lambda unit, uid=None: UnitStatus(
+            description="", active_state="active", load_state="loaded"
+        ),
     )
     return build_inventory(collect_snapshot(sources), IMPORTED)
 
@@ -63,11 +71,17 @@ def test_visible_rows(inventory):
 
     assert visible == {
         "system:finance-tracker.service": (
-            "lan", [(8001, "lan", None), (8001, "tailnet", f"http://{FQDN}:8001")]),
+            "lan",
+            [(8001, "lan", None), (8001, "tailnet", f"http://{FQDN}:8001")],
+        ),
         "user:1000:groceries-web.service": (
-            "tailnet", [(8080, "lan_blocked", None), (8080, "tailnet", f"http://{FQDN}:8080")]),
+            "tailnet",
+            [(8080, "lan_blocked", None), (8080, "tailnet", f"http://{FQDN}:8080")],
+        ),
         "user:1000:ntfy.service": (
-            "tailnet", [(8090, "lan_blocked", None), (8090, "tailnet", f"http://{FQDN}:8090")]),
+            "tailnet",
+            [(8090, "lan_blocked", None), (8090, "tailnet", f"http://{FQDN}:8090")],
+        ),
         "docker:app/app": ("tailnet", [(3000, "tailnet", f"https://{FQDN}:8443/")]),
         "docker:awcp/awcp": ("tailnet", [(8790, "tailnet", f"https://{FQDN}/")]),
         "user:1000:garmin-mcp-proxy.service": ("internal", [(8767, "internal", None)]),
@@ -111,7 +125,10 @@ def test_other_processes_are_labelled_with_the_process_name(inventory):
 
 
 def test_imported_annotations_are_applied(inventory):
-    assert inventory.row("system:finance-tracker.service").description == "ABN Amro based finance tracker"
+    assert (
+        inventory.row("system:finance-tracker.service").description
+        == "ABN Amro based finance tracker"
+    )
     assert inventory.row("user:1000:ah-connector.service").health_path == "/health"
 
 

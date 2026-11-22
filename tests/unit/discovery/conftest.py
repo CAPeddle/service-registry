@@ -10,8 +10,10 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "z2"
 @pytest.fixture
 def fixture_text():
     """Read a captured Z2 output by file name."""
+
     def read(name: str) -> str:
         return (FIXTURES / name).read_text()
+
     return read
 
 

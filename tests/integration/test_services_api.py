@@ -11,10 +11,18 @@ from src.services.discovery.inventory import AccessPath, Inventory, InventoryRow
 
 def make_row(key, name, origin):
     return InventoryRow(
-        identity_key=key, display_name=name, description=None, origin=origin, state="running",
-        group="internal", hidden=False, suppressed=False,
-        access_paths=(AccessPath(8772, "internal", None, True),), primary_port=8772,
-        health_path=None, link_override=None,
+        identity_key=key,
+        display_name=name,
+        description=None,
+        origin=origin,
+        state="running",
+        group="internal",
+        hidden=False,
+        suppressed=False,
+        access_paths=(AccessPath(8772, "internal", None, True),),
+        primary_port=8772,
+        health_path=None,
+        link_override=None,
     )
 
 
@@ -112,14 +120,19 @@ def test_repeat_registration_updates_the_same_annotation(client):
     assert (note.description, note.display_name, note.hidden) == ("New text", "AH", False)
 
 
-@pytest.mark.parametrize("name, key", [
-    ("finance-tracker.service", "system:finance-tracker.service"),
-    ("web", "docker:awcp/web"),
-    ("clockme", "docker:clockme"),
-])
+@pytest.mark.parametrize(
+    "name, key",
+    [
+        ("finance-tracker.service", "system:finance-tracker.service"),
+        ("web", "docker:awcp/web"),
+        ("clockme", "docker:clockme"),
+    ],
+)
 def test_registration_matches_unit_compose_service_or_container_name(client, name, key):
-    response = client.post("/api/services", json={
-        "name": name, "description": "d", "base_url": "http://192.168.2.24:8001"})
+    response = client.post(
+        "/api/services",
+        json={"name": name, "description": "d", "base_url": "http://192.168.2.24:8001"},
+    )
 
     assert response.status_code == 201
     assert response.json()["identity_key"] == key
@@ -130,9 +143,15 @@ def test_registration_falls_back_to_an_existing_annotation(client, overrides):
     overrides[get_inventory_service] = lambda: FakeInventory([])
     annotate("user:1000:old.service", health_path="/old")
 
-    response = client.post("/api/services", json={
-        "name": "old.service", "description": "d", "base_url": "http://127.0.0.1:9000",
-        "health_endpoint": "/health"})
+    response = client.post(
+        "/api/services",
+        json={
+            "name": "old.service",
+            "description": "d",
+            "base_url": "http://127.0.0.1:9000",
+            "health_endpoint": "/health",
+        },
+    )
 
     assert response.json()["identity_key"] == "user:1000:old.service"
     assert response.json()["health_path"] == "/health"
@@ -140,8 +159,14 @@ def test_registration_falls_back_to_an_existing_annotation(client, overrides):
 
 
 def test_registration_matching_nothing_becomes_manual_with_its_url(client):
-    response = client.post("/api/services", json={
-        "name": "printer", "description": "Office printer", "base_url": "http://printer.lan/"})
+    response = client.post(
+        "/api/services",
+        json={
+            "name": "printer",
+            "description": "Office printer",
+            "base_url": "http://printer.lan/",
+        },
+    )
 
     assert response.status_code == 201
     body = response.json()
@@ -151,19 +176,26 @@ def test_registration_matching_nothing_becomes_manual_with_its_url(client):
 
 
 def test_repeat_manual_registration_updates_its_link(client):
-    client.post("/api/services", json={
-        "name": "printer", "description": "d", "base_url": "http://printer.lan/"})
-    client.post("/api/services", json={
-        "name": "printer", "description": "d", "base_url": "http://printer2.lan/"})
+    client.post(
+        "/api/services",
+        json={"name": "printer", "description": "d", "base_url": "http://printer.lan/"},
+    )
+    client.post(
+        "/api/services",
+        json={"name": "printer", "description": "d", "base_url": "http://printer2.lan/"},
+    )
 
     assert stored("manual:printer").link_override == "http://printer2.lan/"
 
 
-@pytest.mark.parametrize("change", [
-    {"base_url": "printer.lan"},
-    {"base_url": "ftp://printer.lan/"},
-    {"health_endpoint": "health"},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"base_url": "printer.lan"},
+        {"base_url": "ftp://printer.lan/"},
+        {"health_endpoint": "health"},
+    ],
+)
 def test_registration_validation(client, change):
     data = {"name": "printer", "description": "d", "base_url": "http://printer.lan/", **change}
 
@@ -174,8 +206,10 @@ def test_registration_validation(client, change):
 
 
 def test_edit_creates_the_annotation_when_none_exists(client):
-    response = client.put("/api/services/annotation", json={
-        "identity_key": "docker:app/app", "display_name": "Clock me", "hidden": True})
+    response = client.put(
+        "/api/services/annotation",
+        json={"identity_key": "docker:app/app", "display_name": "Clock me", "hidden": True},
+    )
 
     assert response.status_code == 200
     assert response.json()["identity_key"] == "docker:app/app"
@@ -190,35 +224,68 @@ def test_hide_toggle_leaves_other_fields_alone(client):
 
     note = stored("docker:app/app")
     assert (note.display_name, note.health_path, note.primary_port, note.hidden) == (
-        "Clock me", "/health", 3000, False)
+        "Clock me",
+        "/health",
+        3000,
+        False,
+    )
 
 
 def test_edit_stores_all_fields_and_blank_clears(client):
-    client.put("/api/services/annotation", json={
-        "identity_key": "user:1000:ntfy.service", "display_name": "ntfy",
-        "description": "Push notifications", "link_override": "https://ntfy.example/",
-        "health_path": "/v1/health", "primary_port": 8090})
+    client.put(
+        "/api/services/annotation",
+        json={
+            "identity_key": "user:1000:ntfy.service",
+            "display_name": "ntfy",
+            "description": "Push notifications",
+            "link_override": "https://ntfy.example/",
+            "health_path": "/v1/health",
+            "primary_port": 8090,
+        },
+    )
     note = stored("user:1000:ntfy.service")
-    assert (note.display_name, note.description, note.link_override, note.health_path,
-            note.primary_port) == ("ntfy", "Push notifications", "https://ntfy.example/",
-                                   "/v1/health", 8090)
+    assert (
+        note.display_name,
+        note.description,
+        note.link_override,
+        note.health_path,
+        note.primary_port,
+    ) == ("ntfy", "Push notifications", "https://ntfy.example/", "/v1/health", 8090)
 
-    client.put("/api/services/annotation", json={
-        "identity_key": "user:1000:ntfy.service", "display_name": "", "description": " ",
-        "link_override": "", "health_path": "", "primary_port": None, "hidden": None})
+    client.put(
+        "/api/services/annotation",
+        json={
+            "identity_key": "user:1000:ntfy.service",
+            "display_name": "",
+            "description": " ",
+            "link_override": "",
+            "health_path": "",
+            "primary_port": None,
+            "hidden": None,
+        },
+    )
     note = stored("user:1000:ntfy.service")
-    assert (note.display_name, note.description, note.link_override, note.health_path,
-            note.primary_port, note.hidden) == (None, None, None, None, None, None)
+    assert (
+        note.display_name,
+        note.description,
+        note.link_override,
+        note.health_path,
+        note.primary_port,
+        note.hidden,
+    ) == (None, None, None, None, None, None)
 
 
-@pytest.mark.parametrize("change", [
-    {"link_override": "javascript:alert(1)"},
-    {"link_override": "printer.lan"},
-    {"health_path": "health"},
-    {"primary_port": 0},
-    {"primary_port": 65536},
-    {"identity_key": ""},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"link_override": "javascript:alert(1)"},
+        {"link_override": "printer.lan"},
+        {"health_path": "health"},
+        {"primary_port": 0},
+        {"primary_port": 65536},
+        {"identity_key": ""},
+    ],
+)
 def test_edit_validation(client, change):
     data = {"identity_key": "docker:app/app", **change}
 
@@ -244,11 +311,14 @@ def test_list_and_delete_annotations(client):
 
 
 def test_cross_origin_preflight_is_not_allowed(client):
-    response = client.options("/api/services", headers={
-        "Origin": "http://evil.example",
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "content-type",
-    })
+    response = client.options(
+        "/api/services",
+        headers={
+            "Origin": "http://evil.example",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
 
     assert "access-control-allow-origin" not in response.headers
 

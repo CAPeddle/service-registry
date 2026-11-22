@@ -61,7 +61,10 @@ GROUP_NOT_RUNNING = "not_running"
 RUNNING = "running"
 
 _WILDCARDS = frozenset({"0.0.0.0", "::", "*"})
-_TAILNET_NETWORKS = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
+_TAILNET_NETWORKS = (
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("fd7a:115c:a1e0::/48"),
+)
 _TAILNET_INTERFACE = "tailscale0"
 _LAN_NETWORK = ipaddress.ip_network(firewall.DEFAULT_LAN_SUBNET)
 
@@ -80,9 +83,12 @@ class Sources:
 
     list_sockets: Callable[[], list[ListeningSocket] | SourceError] = sockets.list_sockets
     read_cgroup: Callable[[int], UnitRef | Unattributed | SourceError] = cgroups.read_cgroup
-    list_published_ports: Callable[[], dict[tuple[str, int], Container] | SourceError] = (
-        docker_ports.list_published_ports)
-    list_serve_mappings: Callable[[], list[ServeMapping] | SourceError] = tailscale_serve.list_serve_mappings
+    list_published_ports: Callable[
+        [], dict[tuple[str, int], Container] | SourceError
+    ] = docker_ports.list_published_ports
+    list_serve_mappings: Callable[
+        [], list[ServeMapping] | SourceError
+    ] = tailscale_serve.list_serve_mappings
     read_firewall: Callable[[], LanFirewall | SourceError] = firewall.read_firewall
     show_unit: Callable[[str, int | None], UnitStatus | SourceError] = units.show_unit
 
@@ -108,7 +114,9 @@ class SourceSnapshot:
 
 def collect_snapshot(sources: Sources) -> SourceSnapshot:
     listening = sources.list_sockets()
-    pids = set() if isinstance(listening, SourceError) else {pid for s in listening for pid in s.pids}
+    pids = (
+        set() if isinstance(listening, SourceError) else {pid for s in listening for pid in s.pids}
+    )
     return SourceSnapshot(
         sockets=listening,
         cgroups={pid: sources.read_cgroup(pid) for pid in sorted(pids)},
@@ -148,7 +156,8 @@ class InventoryRow:
     display_name: str
     description: str | None
     origin: str  # system, user, docker, manual or other
-    state: str  # running, running without a port, failed, inactive, not found, not running, unknown, ...
+    # running, running without a port, failed, inactive, not found, not running, unknown, ...
+    state: str
     group: str
     hidden: bool
     suppressed: bool  # on the default suppression list
@@ -168,7 +177,8 @@ class Inventory:
 
 
 class AnnotationSource(Protocol):
-    def list(self) -> Iterable[Any]: ...
+    def list(self) -> Iterable[Any]:
+        ...
 
 
 class InventoryService:
@@ -243,16 +253,22 @@ class _Context:
         self.fronts: dict[int, list[str]] = defaultdict(list)
         for mapping in mappings:
             self.fronts[mapping.target_port].append(mapping.url)
-        self.fqdn = next((urlsplit(m.url).hostname for m in mappings if urlsplit(m.url).hostname), None)
+        self.fqdn = next(
+            (urlsplit(m.url).hostname for m in mappings if urlsplit(m.url).hostname), None
+        )
 
     def is_serve_front(self, socket: ListeningSocket) -> bool:
-        return socket.port in self.front_ports and any(p.name == "tailscaled" for p in socket.processes)
+        return socket.port in self.front_ports and any(
+            p.name == "tailscaled" for p in socket.processes
+        )
 
     def attribute(self, socket: ListeningSocket) -> _Identity:
         if any(p.name == "docker-proxy" for p in socket.processes):
             container = self._container(socket)
             if container is None:
-                return _Identity(f"docker-proxy:{socket.port}", "docker", "docker-proxy", unresolved=True)
+                return _Identity(
+                    f"docker-proxy:{socket.port}", "docker", "docker-proxy", unresolved=True
+                )
             if container.project and container.service:
                 key = f"docker:{container.project}/{container.service}"
             else:
@@ -262,7 +278,9 @@ class _Context:
         for process in socket.processes:
             ref = self.snapshot.cgroups.get(process.pid)
             if isinstance(ref, UnitRef):
-                key = f"system:{ref.unit}" if ref.scope == "system" else f"user:{ref.uid}:{ref.unit}"
+                key = (
+                    f"system:{ref.unit}" if ref.scope == "system" else f"user:{ref.uid}:{ref.unit}"
+                )
                 return _Identity(key, ref.scope, ref.unit, unit=ref)
 
         name = socket.processes[0].name if socket.processes else "unknown process"
@@ -273,7 +291,9 @@ class _Context:
             return None
         return self.docker.get((socket.address, socket.port))
 
-    def classify(self, socket: ListeningSocket, identity: _Identity) -> list[tuple[int, str, str | None]]:
+    def classify(
+        self, socket: ListeningSocket, identity: _Identity
+    ) -> list[tuple[int, str, str | None]]:
         port = socket.port
         if identity.unresolved:
             return [(port, UNKNOWN, None)]
@@ -284,7 +304,9 @@ class _Context:
             paths.append((port, self._lan_reach(port, identity), None))
             if self.fqdn:
                 paths.append((port, TAILNET, f"http://{self.fqdn}:{port}"))
-        elif socket.interface == _TAILNET_INTERFACE or any(address in n for n in _TAILNET_NETWORKS if address):
+        elif socket.interface == _TAILNET_INTERFACE or any(
+            address in n for n in _TAILNET_NETWORKS if address
+        ):
             paths.append((port, TAILNET, f"http://{self.fqdn}:{port}" if self.fqdn else None))
         elif address is not None and address in _LAN_NETWORK:
             paths.append((port, self._lan_reach(port, identity), None))
@@ -350,7 +372,11 @@ def _running_row(
 
 
 def _is_noise(key: str, port: int) -> bool:
-    return port in _NOISE_PORTS or key == _TAILSCALED_KEY or port in _NOISE_PORTS_BY_IDENTITY.get(key, ())
+    return (
+        port in _NOISE_PORTS
+        or key == _TAILSCALED_KEY
+        or port in _NOISE_PORTS_BY_IDENTITY.get(key, ())
+    )
 
 
 def _group(paths: tuple[AccessPath, ...]) -> str:

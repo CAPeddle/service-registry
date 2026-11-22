@@ -19,6 +19,7 @@ def startup_event():
     """Initialize database on startup."""
     init_db()
 
+
 # No CORS middleware: the page's own scripts are same-origin and registrations
 # come from servers, so no browser on another origin may call the write API.
 

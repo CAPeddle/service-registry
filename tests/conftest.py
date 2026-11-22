@@ -10,12 +10,12 @@ _TEST_DB_DIR = tempfile.mkdtemp(prefix="service-registry-tests-")
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test.db"
 
 import pytest  # noqa: E402
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
 
-from src.api.main import app
-from src.models.base import Base
+from src.api.main import app  # noqa: E402
+from src.models.base import Base  # noqa: E402
 
 
 @pytest.fixture

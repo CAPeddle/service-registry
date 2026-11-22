@@ -13,8 +13,18 @@ from fastapi.templating import Jinja2Templates
 
 from src.api.dependencies.services import get_health_check_service, get_inventory_service
 from src.services.discovery.inventory import (
-    GROUP_INTERNAL, GROUP_LAN, GROUP_NOT_RUNNING, GROUP_TAILNET, GROUP_UNKNOWN, INTERNAL, LAN,
-    LAN_BLOCKED, TAILNET, AccessPath, InventoryRow, InventoryService,
+    GROUP_INTERNAL,
+    GROUP_LAN,
+    GROUP_NOT_RUNNING,
+    GROUP_TAILNET,
+    GROUP_UNKNOWN,
+    INTERNAL,
+    LAN,
+    LAN_BLOCKED,
+    TAILNET,
+    AccessPath,
+    InventoryRow,
+    InventoryService,
 )
 from src.services.health_check import HealthCheckService, ProbeRequest, ProbeResult
 
@@ -114,11 +124,14 @@ async def index(
     groups = [g for g in groups if g.key != GROUP_UNKNOWN or g.rows]
     hidden = [v for v in views if v.row.hidden]
     if show_hidden:
-        groups.append(GroupView(
-            GROUP_HIDDEN, "Hidden",
-            [v for v in hidden if v.row.origin != "other"],
-            [v for v in hidden if v.row.origin == "other"],
-        ))
+        groups.append(
+            GroupView(
+                GROUP_HIDDEN,
+                "Hidden",
+                [v for v in hidden if v.row.origin != "other"],
+                [v for v in hidden if v.row.origin == "other"],
+            )
+        )
 
     return templates.TemplateResponse(
         "index.html",
@@ -136,8 +149,7 @@ def _probe_requests(row: InventoryRow) -> list[ProbeRequest]:
     """One probe per local port; the primary port also checks the annotated health path."""
     ports = sorted({path.port for path in row.access_paths})
     return [
-        ProbeRequest(port, row.health_path if port == row.primary_port else None)
-        for port in ports
+        ProbeRequest(port, row.health_path if port == row.primary_port else None) for port in ports
     ]
 
 
