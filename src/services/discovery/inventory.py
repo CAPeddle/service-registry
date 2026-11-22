@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Protocol
 from urllib.parse import urlsplit
@@ -75,6 +75,10 @@ _NOISE_PORTS_BY_IDENTITY = {
 }
 _TAILSCALED_KEY = "system:tailscaled.service"  # what remains are its peerapi ports
 
+# Unit lookups for one build run in parallel; any still running at the deadline count as failed.
+UNIT_LOOKUP_DEADLINE = 2.0
+_UNIT_LOOKUP_WORKERS = 8
+
 
 @dataclass(frozen=True)
 class Sources:
@@ -109,6 +113,25 @@ class SourceSnapshot:
         if key not in self._units:
             self._units[key] = self.show_unit(unit, uid)
         return self._units[key]
+
+    def resolve_units(
+        self, keys: Iterable[tuple[str, int | None]], deadline: float = UNIT_LOOKUP_DEADLINE
+    ) -> None:
+        """Look up the units not yet known in parallel, giving up on all of them at ``deadline``."""
+        missing = [key for key in dict.fromkeys(keys) if key not in self._units]
+        if not missing:
+            return
+        pool = ThreadPoolExecutor(max_workers=min(_UNIT_LOOKUP_WORKERS, len(missing)))
+        futures = {pool.submit(self.show_unit, *key): key for key in missing}
+        done, _ = wait(futures, timeout=deadline)
+        # Do not wait for lookups that are still hanging.
+        pool.shutdown(wait=False, cancel_futures=True)
+        for future, (unit, uid) in futures.items():
+            if future in done:
+                self._units[(unit, uid)] = future.result()
+            else:
+                message = f"systemctl show {unit} did not answer within {deadline:g}s"
+                self._units[(unit, uid)] = SourceError(units.SOURCE, message)
 
 
 def collect_snapshot(sources: Sources) -> SourceSnapshot:
@@ -273,6 +296,7 @@ def build_inventory(snapshot: SourceSnapshot, annotations: Iterable[Any]) -> Inv
         draft = drafts.setdefault(identity.key, _Draft(identity))
         draft.paths.extend(context.classify(socket, identity))
 
+    snapshot.resolve_units(_unit_lookups(drafts, by_key, snapshot))
     rows = [_running_row(d, by_key.get(key), snapshot, errors) for key, d in drafts.items()]
     for key, note in by_key.items():
         if key not in drafts:
@@ -284,6 +308,23 @@ def build_inventory(snapshot: SourceSnapshot, annotations: Iterable[Any]) -> Inv
     serve = [] if isinstance(snapshot.serve, SourceError) else snapshot.serve
     tailnet_hosts = frozenset(h.lower() for m in serve if (h := urlsplit(m.url).hostname))
     return Inventory(rows=rows, errors=list(errors.values()), tailnet_hosts=tailnet_hosts)
+
+
+def _unit_lookups(
+    drafts: dict[str, _Draft], by_key: dict[str, Any], snapshot: SourceSnapshot
+) -> list[tuple[str, int | None]]:
+    """The units whose status _running_row and _absent_row will ask for."""
+    lookups = []
+    for key, draft in drafts.items():
+        unit = draft.identity.unit
+        if unit is not None and not _annotated(by_key.get(key), "display_name"):
+            lookups.append((unit.unit, unit.uid))
+    if not isinstance(snapshot.sockets, SourceError):
+        for key in by_key:
+            parts = parse_identity_key(key)
+            if key not in drafts and parts is not None and parts.prefix in ("system", "user"):
+                lookups.append((parts.name, parts.uid))
+    return lookups
 
 
 class _Context:

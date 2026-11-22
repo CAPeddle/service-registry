@@ -1,5 +1,6 @@
 """The landing page: grouped live inventory with visitor-relative links."""
 import re
+import time
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -29,7 +30,12 @@ from src.services.discovery.inventory import (
 from src.services.discovery.sockets import parse_ss
 from src.services.discovery.tailscale_serve import parse_serve_status
 from src.services.discovery.units import UnitStatus
-from src.services.health_check import HealthCheckService, HealthStatus, ProbeResult
+from src.services.health_check import (
+    PROBE_HEADER,
+    HealthCheckService,
+    HealthStatus,
+    ProbeResult,
+)
 
 FQDN = "z2.example-tailnet.ts.net"
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "z2"
@@ -555,6 +561,42 @@ def test_page_loads_when_no_shown_row_has_a_port_to_probe(client, overrides):
     html = page(client)
     assert "sockets" in re.search(r'class="source-errors"[^>]*>(.*?)</div>', html, re.S).group(1)
     assert "system:finance-tracker.service" in html
+
+
+# Probes from this app reaching its own landing page
+
+
+class RaisingInventory:
+    def get(self, *, refresh=False):
+        raise AssertionError("the inventory was built")
+
+
+class RaisingProber:
+    async def probe_batch(self, requests):
+        raise AssertionError("ports were probed")
+
+
+def test_probe_request_gets_a_plain_answer_without_inventory_or_probes(client, overrides):
+    serve(overrides, RaisingInventory(), RaisingProber())
+
+    started = time.monotonic()
+    response = client.get("/", headers={"Host": "127.0.0.1:8000", PROBE_HEADER: "1"})
+
+    assert time.monotonic() - started < 0.5
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "<html" not in response.text.lower()
+
+
+def test_request_without_the_probe_header_still_renders_the_page(client, overrides):
+    prober = serve(overrides, FakeInventory([GROCERIES]), FakeProber(http_ports={8080}))
+
+    response = client.get("/", headers={"Host": "127.0.0.1:8000"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'data-identity-key="user:1000:groceries-web.service"' in response.text
+    assert [r.port for r in prober.requests] == [8080]
 
 
 # Registrations held for review

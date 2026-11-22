@@ -10,6 +10,9 @@ from datetime import datetime, timedelta, UTC
 _BUDGET_MARGIN = 0.25
 _MIN_HEALTH_TIMEOUT = 0.1
 
+# Sent with every probe so this app's own landing page can answer without probing again.
+PROBE_HEADER = "X-Service-Registry-Probe"
+
 
 @dataclass
 class HealthStatus:
@@ -92,7 +95,7 @@ class HealthCheckService:
         """
         unique = list(dict.fromkeys(requests))
         results: dict[ProbeRequest, ProbeResult] = {}
-        async with httpx.AsyncClient(follow_redirects=False) as client:
+        async with httpx.AsyncClient(follow_redirects=False, headers={PROBE_HEADER: "1"}) as client:
             tasks = {asyncio.ensure_future(self._probe_one(client, req)): req for req in unique}
             done, pending = await asyncio.wait(tasks, timeout=self.budget)
             for task in pending:

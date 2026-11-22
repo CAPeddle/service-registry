@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from src.api.dependencies.services import get_health_check_service
-from src.services.health_check import HealthCheckService, ProbeRequest
+from src.services.health_check import PROBE_HEADER, HealthCheckService, ProbeRequest
 
 
 # --- Concurrent probes against real local servers -------------------------
@@ -20,6 +20,7 @@ class LocalServer:
     def __init__(self, behavior):
         self.behavior = behavior
         self.requests = Counter()
+        self.raw: list[bytes] = []
         self.release = threading.Event()
         self._sock = socket.socket()
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -40,6 +41,7 @@ class LocalServer:
     def _handle(self, conn):
         try:
             data = conn.recv(4096)
+            self.raw.append(data)
             parts = data.split(b" ", 2)
             path = parts[1].decode() if len(parts) > 1 else ""
             self.requests[path] += 1
@@ -116,6 +118,16 @@ async def test_port_answering_404_counts_as_http(make_server, prober):
     result = (await prober.probe_batch([req]))[req]
     assert result.is_http is True
     assert result.checking_failed is False
+
+
+async def test_every_probe_request_carries_the_probe_header(make_server, prober):
+    srv = make_server(_routes)
+    req = ProbeRequest(srv.port, "/ok")
+    await prober.probe_batch([req])
+    assert srv.requests["/"] == 1 and srv.requests["/ok"] == 1
+    marker = f"{PROBE_HEADER.lower()}: 1".encode()
+    assert len(srv.raw) == 2
+    assert all(marker in raw.lower() for raw in srv.raw)
 
 
 async def test_reset_and_non_http_ports_are_not_http(make_server, prober):

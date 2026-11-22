@@ -1,4 +1,6 @@
 """Tests for turning discovery source results and annotations into page rows."""
+import dataclasses
+import threading
 import time
 from types import SimpleNamespace
 
@@ -654,3 +656,57 @@ def test_user_identity_with_a_non_ascii_digit_uid_gets_no_row_instead_of_failing
     inventory = inventory_for([annotation("user:²:x.service", hidden=True)])
 
     assert inventory.rows == []
+
+
+# Unit lookups run concurrently under one deadline
+
+
+def test_unit_lookups_run_concurrently():
+    def slow_show_unit(unit, uid=None):
+        time.sleep(1)
+        return UnitStatus(f"{unit} described", "active", "loaded")
+
+    sources = make_sources(
+        sockets=[sock("127.0.0.1", 9000 + n, "app", 10 + n) for n in range(6)],
+        cgroups={10 + n: system(f"app{n}.service") for n in range(6)},
+    )
+    sources = dataclasses.replace(sources, show_unit=slow_show_unit)
+    snapshot = collect_snapshot(sources)
+    absent = [annotation("system:gone.service"), annotation("user:1000:idle.service")]
+
+    started = time.monotonic()
+    inventory = build_inventory(snapshot, absent)
+
+    assert time.monotonic() - started < 2.5
+    assert inventory.errors == []
+    assert inventory.row("system:app3.service").display_name == "app3.service described"
+    assert inventory.row("system:gone.service").state == "running without a port"
+    assert inventory.row("user:1000:idle.service").display_name == "idle.service described"
+
+
+def test_unit_lookups_still_running_at_the_deadline_count_as_failed():
+    release = threading.Event()
+
+    def show_unit(unit, uid=None):
+        if unit.startswith("hung"):
+            release.wait(3)
+        return UnitStatus(f"{unit} described", "active", "loaded")
+
+    sources = make_sources(
+        sockets=[sock("127.0.0.1", 9000, "app", 5), sock("127.0.0.1", 9001, "app", 6)],
+        cgroups={5: system("hung-app.service"), 6: system("fast.service")},
+    )
+    sources = dataclasses.replace(sources, show_unit=show_unit)
+    snapshot = collect_snapshot(sources)
+    try:
+        started = time.monotonic()
+        inventory = build_inventory(snapshot, [annotation("system:hung-gone.service")])
+        elapsed = time.monotonic() - started
+    finally:
+        release.set()
+
+    assert elapsed < 2.8
+    assert inventory.row("system:hung-app.service").display_name == "hung-app.service"
+    assert inventory.row("system:hung-gone.service").state == "unknown"
+    assert inventory.row("system:fast.service").display_name == "fast.service described"
+    assert [e.source for e in inventory.errors] == ["units"]

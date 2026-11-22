@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -32,7 +33,12 @@ from src.services.discovery.inventory import (
     InventoryRow,
     InventoryService,
 )
-from src.services.health_check import HealthCheckService, ProbeRequest, ProbeResult
+from src.services.health_check import (
+    PROBE_HEADER,
+    HealthCheckService,
+    ProbeRequest,
+    ProbeResult,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="src/api/templates")
@@ -132,6 +138,9 @@ async def index(
     db: Session = Depends(get_db),
 ) -> Response:
     """Landing page: what runs on this host and how to reach each service."""
+    if PROBE_HEADER in request.headers:
+        # This app probing its own port (or nginx in front of it): answer without probing again.
+        return PlainTextResponse("ok")
     host = get_safe_hostname(request)
     inventory = await run_in_threadpool(inventory_service.get, refresh=refresh)
     held = await run_in_threadpool(_held_views, db, inventory)
