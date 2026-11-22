@@ -1,5 +1,15 @@
 """Shared test fixtures."""
-import pytest
+import os
+import tempfile
+
+# Point the app at a throwaway database before anything imports src.config.
+# Several test modules call Base.metadata.drop_all(bind=engine); without this
+# they would act on ./service_registry.db, which is the live database when the
+# suite runs from the deployed checkout.
+_TEST_DB_DIR = tempfile.mkdtemp(prefix="service-registry-tests-")
+os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test.db"
+
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

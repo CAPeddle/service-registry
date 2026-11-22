@@ -55,3 +55,7 @@ Thumbs.db
 
 # Git Worktrees
 .worktrees/
+
+# Local environments and editor backups
+.venv/
+*.backup
