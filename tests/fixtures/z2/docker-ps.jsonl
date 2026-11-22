@@ -1,0 +1,3 @@
+{"ID": "1f1d54871055", "Labels": "com.docker.compose.project=awcp,com.docker.compose.service=awcp", "Names": "awcp-awcp-1", "Ports": "127.0.0.1:8790->8790/tcp"}
+{"ID": "fd67869ed77e", "Labels": "com.docker.compose.project=app,com.docker.compose.service=app", "Names": "app-app-1", "Ports": "127.0.0.1:3000->3000/tcp"}
+{"ID": "ccd902e0846d", "Labels": "com.docker.compose.project=awcp,com.docker.compose.service=db", "Names": "awcp-db-1", "Ports": "5432/tcp"}
