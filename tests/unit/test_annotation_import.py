@@ -1,13 +1,14 @@
 """Tests for the one-time import of configured services into annotations."""
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from src.core.database import init_db
 from src.repositories.annotation_repository import AnnotationRepository
 
 
-def make_engine(rows=()):
+def make_engine(rows=(), url="sqlite://"):
     """Engine with an old-style services table holding the given rows."""
-    engine = create_engine("sqlite://")
+    engine = create_engine(url)
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -83,6 +84,79 @@ def test_api_registered_row_becomes_manual_when_no_user_unit():
     init_db(engine, user_unit_exists=lambda name: False)
 
     assert list(annotations(engine)) == ["manual:ah-connector.service"]
+
+
+def test_manual_row_keeps_its_link():
+    engine = make_engine([{**AH, "base_url": "http://nas.example:5000/"}])
+    init_db(engine, user_unit_exists=lambda name: False)
+
+    note = annotations(engine)["manual:ah-connector.service"]
+    assert note.link_override == "http://nas.example:5000/"
+
+
+def test_unit_row_drops_its_old_link():
+    engine = make_engine([FINANCE, {**AH, "base_url": "http://192.168.2.24:8772"}])
+    init_db(engine, user_unit_exists=lambda name: True)
+
+    assert {k: a.link_override for k, a in annotations(engine).items()} == {
+        "system:finance-tracker.service": None,
+        "user:1000:ah-connector.service": None,
+    }
+
+
+@pytest.mark.parametrize("url", [None, "", "javascript:alert(1)", "nas.example:5000"])
+def test_manual_row_drops_a_value_that_is_not_an_http_link(url):
+    engine = make_engine([{**AH, "base_url": url}])
+    init_db(engine, user_unit_exists=lambda name: False)
+
+    assert annotations(engine)["manual:ah-connector.service"].link_override is None
+
+
+def test_deleted_annotations_do_not_return_after_a_restart(tmp_path):
+    url = f"sqlite:///{tmp_path}/old.db"
+    engine = make_engine([FINANCE, AH], url)
+    init_db(engine, user_unit_exists=lambda name: False)
+    session = sessionmaker(bind=engine)()
+    for key in list(annotations(engine)):
+        assert AnnotationRepository(session).delete(key)
+    session.close()
+    engine.dispose()
+
+    restarted = create_engine(url)
+    init_db(restarted, user_unit_exists=lambda name: False)
+
+    assert annotations(restarted) == {}
+    restarted.dispose()
+
+
+def test_annotations_from_a_build_without_the_marker_count_as_imported():
+    engine = make_engine([FINANCE, AH])
+    init_db(engine, user_unit_exists=lambda name: True)
+    with engine.begin() as conn:
+        conn.execute(text("PRAGMA user_version = 0"))  # as an earlier build left it
+        conn.execute(text("DELETE FROM annotations WHERE identity_key LIKE 'user:%'"))
+
+    init_db(engine, user_unit_exists=lambda name: True)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM annotations"))
+    init_db(engine, user_unit_exists=lambda name: True)
+
+    assert annotations(engine) == {}
+
+
+def test_failed_import_stores_nothing_and_is_retried(tmp_path):
+    engine = make_engine([FINANCE, AH], f"sqlite:///{tmp_path}/old.db")
+
+    def broken(name):
+        raise OSError("unit directory unreadable")
+
+    with pytest.raises(OSError):
+        init_db(engine, user_unit_exists=broken)
+    assert annotations(engine) == {}
+
+    init_db(engine, user_unit_exists=lambda name: True)
+    assert len(annotations(engine)) == 2
+    engine.dispose()
 
 
 def test_second_startup_keeps_user_edits_and_adds_no_duplicates():

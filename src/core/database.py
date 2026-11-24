@@ -9,6 +9,8 @@ from sqlalchemy.engine import Engine
 from src.models.base import Base, engine as default_engine
 
 USER_UID = 1000
+# SQLite's user_version once the old services table has been imported.
+IMPORTED_VERSION = 1
 # The service runs as root, so look in the household user's home, not root's.
 _USER_UNIT_DIRS = (
     Path(pwd.getpwuid(USER_UID).pw_dir) / ".config" / "systemd" / "user",
@@ -25,36 +27,46 @@ def user_unit_exists(name: str) -> bool:
 def import_configured_services(engine: Engine, unit_exists: Callable[[str], bool]) -> None:
     """Copy CONFIGURED rows of the old services table into annotations, once.
 
-    Runs only when the annotations table is empty and the services table exists.
+    The database records that this has run, so deleted annotations stay deleted.
+    Annotations written before that record existed also mean it has run.
     """
     inspector = inspect(engine)
     if not inspector.has_table("services"):
         return
     with engine.begin() as conn:
+        if conn.execute(text("PRAGMA user_version")).scalar() >= IMPORTED_VERSION:
+            return
         if conn.execute(text("SELECT COUNT(*) FROM annotations")).scalar():
+            conn.execute(text(f"PRAGMA user_version = {IMPORTED_VERSION}"))
             return
         rows = conn.execute(
             text(
-                "SELECT name, description, health_endpoint, systemd_state FROM services "
+                "SELECT name, description, health_endpoint, base_url, systemd_state FROM services "
                 "WHERE status = 'CONFIGURED'"
             )
         ).all()
-        for name, description, health, systemd_state in rows:
+        for name, description, health, base_url, systemd_state in rows:
+            link = None
             if systemd_state != "unknown":
                 key = f"system:{name}"
             elif unit_exists(name):
                 key = f"user:{USER_UID}:{name}"
             else:
                 key = f"manual:{name}"
+                # Nothing is discovered for a manual row, so its stored link is the only one.
+                if base_url and base_url.startswith(("http://", "https://")):
+                    link = base_url
             conn.execute(
                 text(
-                    "INSERT INTO annotations (identity_key, description, health_path, hidden, "
+                    "INSERT INTO annotations (identity_key, description, health_path, "
+                    "link_override, hidden, "
                     "created_at, updated_at) "
-                    "VALUES (:key, :description, :health, NULL, "
+                    "VALUES (:key, :description, :health, :link, NULL, "
                     "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                 ),
-                {"key": key, "description": description, "health": health},
+                {"key": key, "description": description, "health": health, "link": link},
             )
+        conn.execute(text(f"PRAGMA user_version = {IMPORTED_VERSION}"))
 
 
 def init_db(
