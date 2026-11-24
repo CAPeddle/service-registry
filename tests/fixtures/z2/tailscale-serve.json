@@ -1,0 +1,36 @@
+{
+  "TCP": {
+    "443": {
+      "HTTPS": true
+    },
+    "8443": {
+      "HTTPS": true
+    },
+    "8765": {
+      "HTTP": true
+    }
+  },
+  "Web": {
+    "z2.example-tailnet.ts.net:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:8790"
+        }
+      }
+    },
+    "z2.example-tailnet.ts.net:8443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://127.0.0.1:3000"
+        }
+      }
+    },
+    "z2.example-tailnet.ts.net:8765": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://0.0.0.0:8766"
+        }
+      }
+    }
+  }
+}

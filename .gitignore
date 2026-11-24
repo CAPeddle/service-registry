@@ -52,3 +52,10 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Git Worktrees
+.worktrees/
+
+# Local environments and editor backups
+.venv/
+*.backup

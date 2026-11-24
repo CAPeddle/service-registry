@@ -24,8 +24,12 @@ class Settings(BaseSettings):
     health_check_timeout: float = 2.0
     health_check_cache_ttl: int = 60
 
+    # Extra host names accepted on write requests, comma-separated (see README, Security)
+    trusted_hosts: str = ""
+
     class Config:
         """Pydantic config."""
+
         env_file = ".env"
         case_sensitive = False
 

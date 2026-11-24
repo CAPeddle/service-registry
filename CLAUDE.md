@@ -1,25 +1,23 @@
 # service_registry - Claude Context
 
 **Project Type:** Python FastAPI
-**Last Updated:** 2025-12-29
+**Last Updated:** 2026-11-22
 **Skill Version:** 3.0.0
 
 ---
 
 ## Project Overview
 
-**Purpose:** A web-based service registry that discovers Ubuntu systemd services, automatically detects web services via port scanning, and provides a clean dashboard with health monitoring.
+**Purpose:** A landing page for the Z2 home server (192.168.2.48, hostname `z2`). It lists every service listening on a TCP port, discovered live on each page load, and shows how each can be reached (LAN, tailnet, internal only).
 
 **Key Features:**
-- Automatic systemd service discovery
-- Intelligent port detection (80, 443, 3000-9999)
-- Health monitoring with caching
-- REST API for service management
-- Clean web interface (dashboard + scan page)
-- SQLite database with SQLAlchemy ORM
-- FastAPI REST API
-- Layered architecture
-- Comprehensive pytest testing infrastructure
+- Live discovery from `ss`, `/proc/<pid>/cgroup`, `docker ps`, `tailscale serve status --json`, `ufw status verbose` and `systemctl show` (about 10 s cache; Refresh link bypasses it)
+- Per-row reachability: LAN link, blocked by firewall, tailnet only, internal only, reachability unknown
+- Links only when the port answers HTTP (probed on 127.0.0.1) or a link override is set
+- Annotations (SQLite table `annotations`, keyed by identity such as `system:<unit>`, `docker:<project>/<service>`, `manual:<name>`): display name, description, hidden, link override, health path, primary port; edited from the page
+- REST API for annotations (`/api/services`), `/api/v1/health`, `/docs`
+- No scan page or scan endpoint; nothing needs to be registered
+- Layered architecture, pytest suite
 
 ---
 
@@ -48,18 +46,20 @@
 service_registry/
 ├── src/
 │   ├── api/          # HTTP interface
-│   ├── services/     # Business logic
-│   ├── repositories/ # Data access
-│   ├── models/       # Domain models
-│   └── core/         # Shared utilities
-├── tests/            # Test suite
+│   ├── services/     # discovery/ (sockets, cgroups, units, docker_ports,
+│   │                 #   tailscale_serve, firewall, inventory, cache), health_check.py
+│   ├── repositories/ # annotation_repository.py
+│   ├── models/       # annotation.py (current), service.py (legacy table, imported once)
+│   └── core/         # database.py, exceptions
+├── deploy/           # nginx vhost and systemd unit
+├── tests/            # Test suite (fixtures in tests/fixtures/z2/)
 └── docs/             # Documentation
 ```
 
 **Key Components:**
-1. **API Layer**: FastAPI routes and schemas
-2. **Service Layer**: Business logic
-3. **Repository Layer**: Data access abstraction
+1. **API Layer**: FastAPI routes (landing page, annotations API) and schemas
+2. **Discovery/Service Layer**: builds the live inventory and merges annotations; probes ports for HTTP
+3. **Repository Layer**: annotation storage
 4. **Models**: SQLAlchemy models
 
 ---
@@ -73,34 +73,24 @@ service_registry/
 - Follow layered architecture pattern
 - Repository pattern for data access
 - Type hints everywhere
+- Tests must never touch the real database: `tests/conftest.py` sets `DATABASE_URL` to a temporary file before the app is imported. Never point tests at `service_registry.db`.
 
 ---
 
 ## Current Status
 
-**Development Phase:** ✅ Production Ready
+**Development Phase:** Production, running on the Z2
 
-**Implementation Status:** COMPLETE (100%)
-- All 13 planned tasks completed
-- Core features fully implemented
-- Comprehensive documentation
-- Deployed to production server (192.168.2.48)
-
-**Recent Work:**
-- ✅ Complete implementation of all core features
-- ✅ Systemd service discovery with port detection
-- ✅ Health monitoring with caching
-- ✅ REST API (full CRUD)
-- ✅ Web interface (dashboard + scan page)
-- ✅ Comprehensive documentation (README, SERVICE_INTEGRATION_GUIDE)
-- ✅ Bug fixes (systemd parser header filtering)
-- ✅ Production deployment with Nginx
+**Implementation Status:**
+- Landing page with live discovery and annotations replaces the earlier scan-based dashboard
+- Old hand-approved rows from the `services` table are imported into annotations once on first start
+- Deployment steps are in README.md
 
 **Current Priorities:**
 1. Maintain and monitor production deployment
 2. Address any production issues or bugs
 3. Consider future enhancements (see docs/PROGRESS.md)
-4. Expand test coverage for edge cases
+4. Expand test coverage for edge cases (discovery tests use captured output in tests/fixtures/z2/)
 
 ---
 
@@ -150,18 +140,16 @@ mypy src/
 
 **Investigate → Fix → Test → Commit → Deploy**
 
-1. **SSH Access**: `ssh cpeddle@192.168.2.48`
-2. **Investigation**: Debug issues remotely, capture errors
-3. **Fix Locally**: Return to local dev, write tests, fix code
-4. **Commit**: Git commit and push to origin
-5. **Deploy**: SSH to server, `git pull`, `sudo systemctl restart service-registry`
+1. **Investigation**: Debug issues , capture errors
+2. **Fix**: Write tests, fix code
+3. **Commit**: Git commit and push to origin
+4. **Deploy**: `sudo systemctl restart service-registry` (the app runs on this machine; no SSH to another host)
 
 ### Important Notes
 
-- ✅ **ALWAYS** fix code locally, never edit on server
 - ✅ **ALWAYS** write tests for bug fixes
-- ✅ **ALWAYS** commit before deploying
-- ❌ **NEVER** make quick fixes directly on production
+- ✅ **ALWAYS** commit 
+- ❌ **NEVER** make quick fixes 
 - ❌ **NEVER** skip version control
 
 ### Service Management
@@ -186,7 +174,8 @@ git pull origin master
 **Path**: `/etc/systemd/system/service-registry.service`
 **User**: `root` (required for systemctl/ss commands)
 **WorkingDirectory**: `/home/cpeddle/service-registry`
-**Port**: 8000 (Nginx proxies from port 80)
+**Port**: 8000 on 127.0.0.1 (nginx proxies from port 80; vhost in `deploy/nginx/service-registry.conf`)
+**Unit file**: `deploy/systemd/service-registry.service`
 
 **Critical**: Service needs full PATH including system binaries:
 ```

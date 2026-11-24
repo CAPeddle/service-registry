@@ -1,47 +1,414 @@
 {% extends "base.html" %}
 
 {% block header_actions %}
-<a href="/scan" class="btn">Scan for Services</a>
+<div class="header-actions">
+    <a href="{% if show_hidden %}/?refresh=1&amp;show_hidden=1{% else %}/?refresh=1{% endif %}" class="btn">Refresh</a>
+    {% if show_hidden %}
+    <a href="/" class="btn-secondary">Hide hidden rows</a>
+    {% else %}
+    <a href="/?show_hidden=1" class="btn-secondary">Show hidden ({{ hidden_count }})</a>
+    {% endif %}
+</div>
 {% endblock %}
 
-{% block content %}
-{% if services %}
-<table>
-    <thead>
-        <tr>
-            <th>Service Name</th>
-            <th>Status</th>
-            <th>Description</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for service in services %}
-        <tr>
-            <td>
-                <a href="{{ service.base_url }}" target="_blank" class="service-link">
-                    {{ service.name }}
-                </a>
-            </td>
-            <td>
-                <span class="status {{ service.health_status }}"></span>
-                {{ service.health_status }}
-            </td>
-            <td>{{ service.description or '-' }}</td>
-            <td class="actions">
-                <a href="{{ service.base_url }}" target="_blank">Visit</a>
-                {% if service.health_url %}
-                <a href="{{ service.health_url }}" target="_blank">Health</a>
-                {% endif %}
-            </td>
-        </tr>
+{% block extra_head %}
+<style>
+    .source-errors {
+        background: #fff4e5;
+        border: 1px solid #e0a040;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+    }
+    .source-errors ul { margin: 4px 0 0 20px; }
+    .source-errors li { overflow-wrap: anywhere; }
+    .held {
+        background: #f3f7ff;
+        border: 1px solid #9db4e0;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-bottom: 24px;
+    }
+    .held h2 { font-size: 18px; color: #1d3f8a; margin-bottom: 4px; }
+    .held-item { padding: 12px 0; border-top: 1px solid #d5e0f5; }
+    .held-values { border-collapse: collapse; margin: 6px 0 8px; width: 100%; }
+    .held-values th, .held-values td {
+        text-align: left;
+        vertical-align: top;
+        padding: 2px 12px 2px 0;
+        overflow-wrap: anywhere;
+    }
+    .held-values thead th { font-size: 13px; color: #5f6870; font-weight: 500; }
+    .group { margin-bottom: 24px; }
+    .group h2 {
+        font-size: 18px;
+        color: #495057;
+        border-bottom: 2px solid #dee2e6;
+        padding-bottom: 6px;
+        margin-bottom: 4px;
+    }
+    .group h3.subgroup {
+        font-size: 15px;
+        color: #5f6870;
+        margin: 16px 0 4px;
+    }
+    .service {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) auto;
+        gap: 6px 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid #e9ecef;
+        align-items: start;
+    }
+    .service:last-child { border-bottom: none; }
+    .service-name { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+    .service-name a { text-decoration: none; }
+    .service-name a:hover { text-decoration: underline; }
+    .service-desc { color: #444; overflow-wrap: anywhere; }
+    .service-meta { font-size: 14px; color: #5f6870; }
+    .health-healthy { color: #1e7e34; }
+    .health-unhealthy { color: #b02a37; font-weight: 600; }
+    .health-checking-failed { color: #8a5a00; }
+    .paths { list-style: none; }
+    .paths li { overflow-wrap: anywhere; padding: 2px 0; }
+    .paths code { font-size: 14px; }
+    .reach {
+        display: inline-block;
+        font-size: 12px;
+        padding: 0 6px;
+        border-radius: 10px;
+        background: #e9ecef;
+        color: #333;
+        white-space: nowrap;
+    }
+    .reach-lan_blocked { background: #fde2e1; color: #8a1c1c; }
+    .reach-tailnet { background: #e3ecff; color: #1d3f8a; }
+    .reach-unknown { background: #fff4e5; color: #6b4500; }
+    .service-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .btn-small {
+        background: white;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        padding: 4px 10px;
+        font-size: 14px;
+        cursor: pointer;
+        color: #222;
+    }
+    .btn-small:hover { background: #f1f3f5; }
+    .modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+    }
+    .modal.active { display: flex; }
+    .modal-content {
+        background: white;
+        padding: 24px;
+        border-radius: 8px;
+        max-width: 500px;
+        width: 100%;
+        max-height: 100%;
+        overflow-y: auto;
+    }
+    .modal-content h2 { font-size: 20px; overflow-wrap: anywhere; }
+    .modal-key { font-size: 13px; color: #5f6870; margin-bottom: 12px; overflow-wrap: anywhere; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; margin-bottom: 4px; font-weight: 500; color: #495057; }
+    .form-group input, .form-group textarea {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 16px;
+        font-family: inherit;
+    }
+    .form-group textarea { resize: vertical; min-height: 60px; }
+    .form-hint { font-size: 13px; color: #5f6870; }
+    .form-error { color: #b02a37; margin-top: 8px; overflow-wrap: anywhere; }
+    .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+    @media (max-width: 600px) {
+        .service { grid-template-columns: minmax(0, 1fr); }
+        .modal-content { padding: 16px; }
+    }
+</style>
+{% endblock %}
+
+{% macro service_row(view) %}
+{% set row = view.row %}
+<article class="service" data-identity-key="{{ row.identity_key }}">
+    <div class="service-main">
+        <div class="service-name">
+            {% if view.href %}<a href="{{ view.href }}" target="_blank" rel="noopener noreferrer">{{ row.display_name }}</a>{% else %}{{ row.display_name }}{% endif %}
+        </div>
+        {% if row.description %}<p class="service-desc">{{ row.description }}</p>{% endif %}
+        <p class="service-meta">
+            State: {{ row.state }} &middot;
+            <span class="health-{{ view.health | replace(' ', '-') }}">Health: {{ view.health }}</span>
+        </p>
+    </div>
+    <ul class="paths">
+        {% for path in view.paths %}
+        <li>
+            {% if path.href %}<a href="{{ path.href }}" target="_blank" rel="noopener noreferrer">{{ path.text }}</a>{% else %}<code>{{ path.text }}</code>{% endif %}
+            <span class="reach reach-{{ path.reach }}">{{ path.label }}</span>
+        </li>
+        {% else %}
+        <li class="service-meta">No listening port</li>
         {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<div class="empty-state">
-    <p>No configured services found.</p>
-    <p>Click "Scan for Services" to discover services on this server.</p>
+    </ul>
+    <div class="service-actions">
+        <button type="button" class="btn-small js-edit"
+                data-identity-key="{{ row.identity_key }}"
+                data-display-name="{{ row.display_name }}"
+                data-description="{{ row.description or '' }}"
+                data-link-override="{{ row.link_override or '' }}"
+                data-health-path="{{ row.health_path or '' }}"
+                data-primary-port="{{ row.primary_port or '' }}">Edit</button>
+        <button type="button" class="btn-small js-toggle-hidden"
+                data-identity-key="{{ row.identity_key }}"
+                data-hidden="{{ 'true' if row.hidden else 'false' }}">{{ 'Unhide' if row.hidden else 'Hide' }}</button>
+    </div>
+</article>
+{% endmacro %}
+
+{% block content %}
+{% if errors %}
+<div class="source-errors" role="alert">
+    <strong>Some discovery sources failed, so parts of this list may be incomplete or marked unknown:</strong>
+    <ul>
+        {% for error in errors %}
+        <li><strong>{{ error.source }}</strong>: {{ error.message }}</li>
+        {% endfor %}
+    </ul>
 </div>
 {% endif %}
+
+{% if held %}
+<section class="held" id="held-registrations">
+    <h2>Registrations held for review ({{ held | length }})</h2>
+    <p class="service-meta">These registrations would have replaced values set on this page, so they were not applied.</p>
+    {% for item in held %}
+    <article class="held-item">
+        <div class="service-name">{{ item.service }}</div>
+        <p class="service-meta">{{ item.identity_key }} &middot; received {{ item.received }}</p>
+        <table class="held-values">
+            <thead><tr><th scope="col">Field</th><th scope="col">Registration sent</th><th scope="col">Current (set on this page)</th></tr></thead>
+            <tbody>
+                {% for field in item.fields %}
+                <tr><th scope="row">{{ field.label }}</th><td>{{ field.posted }}</td><td>{{ field.current or '' }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="service-actions">
+            <button type="button" class="btn-small js-apply-registration"
+                    data-attempt-id="{{ item.attempt_id }}">Use these values</button>
+            <button type="button" class="btn-small js-dismiss-registration"
+                    data-attempt-id="{{ item.attempt_id }}">Dismiss</button>
+        </div>
+    </article>
+    {% endfor %}
+</section>
+{% endif %}
+
+{% for group in groups %}
+<section class="group" id="group-{{ group.key }}">
+    <h2>{{ group.title }} ({{ group.rows | length + group.others | length }})</h2>
+    {% for view in group.rows %}{{ service_row(view) }}{% endfor %}
+    {% if group.others %}
+    <h3 class="subgroup">Other processes</h3>
+    {% for view in group.others %}{{ service_row(view) }}{% endfor %}
+    {% endif %}
+    {% if not group.rows and not group.others %}
+    <p class="empty-state">Nothing here right now.</p>
+    {% endif %}
+</section>
+{% endfor %}
+
+<div id="edit-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+    <div class="modal-content">
+        <h2 id="edit-title">Edit service</h2>
+        <p class="modal-key" id="edit-key"></p>
+        <form id="edit-form" novalidate>
+            <div class="form-group">
+                <label for="edit-display-name">Display name</label>
+                <input type="text" id="edit-display-name" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="edit-description">Description</label>
+                <textarea id="edit-description"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="edit-link-override">Link override</label>
+                <input type="url" id="edit-link-override" placeholder="https://example.lan/" autocomplete="off">
+                <p class="form-hint">Leave empty to use the detected address.</p>
+            </div>
+            <div class="form-group">
+                <label for="edit-health-path">Health path</label>
+                <input type="text" id="edit-health-path" placeholder="/health" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="edit-primary-port">Primary port</label>
+                <input type="number" id="edit-primary-port" min="1" max="65535" inputmode="numeric">
+            </div>
+            <p class="form-error" id="edit-error" hidden></p>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="edit-cancel">Cancel</button>
+                <button type="submit" class="btn">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var modal = document.getElementById('edit-modal');
+    var form = document.getElementById('edit-form');
+    var errorBox = document.getElementById('edit-error');
+    var currentKey = null;
+    var prefill = {};
+
+    function field(id) { return document.getElementById(id); }
+
+    function reloadPage() {
+        var url = new URL(window.location.href);
+        url.searchParams.delete('refresh');
+        window.location.assign(url.toString());
+    }
+
+    async function send(method, url, body) {
+        var options = { method: method };
+        if (body !== undefined) {
+            options.headers = { 'Content-Type': 'application/json' };
+            options.body = JSON.stringify(body);
+        }
+        var response = await fetch(url, options);
+        if (response.ok) { return; }
+        var message = 'Request failed (' + response.status + ')';
+        try {
+            var data = await response.json();
+            if (Array.isArray(data.detail)) {
+                message = data.detail.map(function (d) { return d.msg; }).join('; ');
+            } else if (data.detail) {
+                message = String(data.detail);
+            }
+        } catch (ignored) { /* keep the status message */ }
+        throw new Error(message);
+    }
+
+    function saveAnnotation(body) {
+        return send('PUT', '/api/services/annotation', body);
+    }
+
+    async function actOnRegistration(button, method, suffix) {
+        button.disabled = true;
+        try {
+            var url = '/api/services/registrations/' + encodeURIComponent(button.dataset.attemptId) + suffix;
+            await send(method, url);
+            reloadPage();
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = error.message;
+        }
+    }
+
+    function openEditor(button) {
+        var data = button.dataset;
+        currentKey = data.identityKey;
+        prefill = {
+            display_name: data.displayName || '',
+            description: data.description || '',
+            link_override: data.linkOverride || '',
+            health_path: data.healthPath || '',
+            primary_port: data.primaryPort || ''
+        };
+        field('edit-title').textContent = 'Edit ' + data.displayName;
+        field('edit-key').textContent = data.identityKey;
+        field('edit-display-name').value = data.displayName || '';
+        field('edit-description').value = data.description || '';
+        field('edit-link-override').value = data.linkOverride || '';
+        field('edit-health-path').value = data.healthPath || '';
+        field('edit-primary-port').value = data.primaryPort || '';
+        errorBox.hidden = true;
+        modal.classList.add('active');
+        field('edit-display-name').focus();
+    }
+
+    function closeEditor() {
+        modal.classList.remove('active');
+        form.reset();
+        currentKey = null;
+    }
+
+    document.addEventListener('click', async function (event) {
+        var edit = event.target.closest('.js-edit');
+        if (edit) {
+            openEditor(edit);
+            return;
+        }
+        var apply = event.target.closest('.js-apply-registration');
+        if (apply) {
+            await actOnRegistration(apply, 'POST', '/apply');
+            return;
+        }
+        var dismiss = event.target.closest('.js-dismiss-registration');
+        if (dismiss) {
+            await actOnRegistration(dismiss, 'DELETE', '');
+            return;
+        }
+        var toggle = event.target.closest('.js-toggle-hidden');
+        if (toggle) {
+            toggle.disabled = true;
+            try {
+                await saveAnnotation({
+                    identity_key: toggle.dataset.identityKey,
+                    hidden: toggle.dataset.hidden !== 'true'
+                });
+                reloadPage();
+            } catch (error) {
+                toggle.disabled = false;
+                toggle.textContent = error.message;
+            }
+        }
+    });
+
+    field('edit-cancel').addEventListener('click', closeEditor);
+    modal.addEventListener('click', function (event) {
+        if (event.target === modal) { closeEditor(); }
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.classList.contains('active')) { closeEditor(); }
+    });
+
+    form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        var values = {
+            display_name: field('edit-display-name').value,
+            description: field('edit-description').value,
+            link_override: field('edit-link-override').value,
+            health_path: field('edit-health-path').value,
+            primary_port: field('edit-primary-port').value.trim()
+        };
+        var body = { identity_key: currentKey };
+        Object.keys(values).forEach(function (name) {
+            if (values[name] !== prefill[name]) { body[name] = values[name]; }
+        });
+        if ('primary_port' in body) {
+            body.primary_port = body.primary_port ? parseInt(body.primary_port, 10) : null;
+        }
+        try {
+            await saveAnnotation(body);
+            reloadPage();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        }
+    });
+})();
+</script>
 {% endblock %}

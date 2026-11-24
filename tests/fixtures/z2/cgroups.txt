@@ -1,0 +1,26 @@
+1128646 0::/system.slice/finance-tracker.service
+1285114 0::/user.slice/user-1000.slice/user@1000.service/app.slice/garmin-mcp-proxy.service
+1285133 0::/user.slice/user-1000.slice/user@1000.service/app.slice/garmin-mcp-backend.service
+1623 0::/user.slice/user-1000.slice/user@1000.service/app.slice/garmin-mcp-rate-limiter.service
+1631 0::/user.slice/user-1000.slice/user@1000.service/app.slice/groceries-web.service
+1718790 0::/user.slice/user-1000.slice/user@1000.service/app.slice/garmin-mcp-power-backend.service
+1718794 0::/user.slice/user-1000.slice/user@1000.service/app.slice/garmin-mcp-power-proxy.service
+1788 0::/user.slice/user-1000.slice/user@1000.service/app.slice/ntfy.service
+1922855 0::/user.slice/user-1000.slice/user@1000.service/tmux-spawn-7b1c1e76-7224-499e-9893-b94507e3437a.scope
+1 0::/init.scope
+1843008 0::/system.slice/docker.service docker-proxy
+1843032 0::/system.slice/docker.service docker-proxy
+2687469 0::/user.slice/user-1000.slice/session-5.scope bash
+1854884 0::/system.slice/nginx.service nginx
+1621836 0::/user.slice/user-1000.slice/session-1763.scope sshd
+1611223 0::/system.slice/tailscaled.service tailscaled
+1128686 0::/system.slice/service-registry.service uvicorn
+1622 0::/user.slice/user-1000.slice/user@1000.service/app.slice/ah-connector.service ah-connector-da
+1843627 0::/system.slice/systemd-resolved.service systemd-resolve
+1854885 0::/system.slice/ssh.service sshd
+1854886 0::/system.slice/nginx.service nginx
+1854887 0::/system.slice/nginx.service nginx
+1854888 0::/system.slice/nginx.service nginx
+1854889 0::/system.slice/nginx.service nginx
+1854890 0::/system.slice/nginx.service nginx
+1854891 0::/system.slice/nginx.service nginx

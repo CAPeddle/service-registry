@@ -1,0 +1,18 @@
+# Runs as root so discovery can see every listening socket's process,
+# read ufw rules, and query user units. Listens on loopback only; nginx
+# fronts it on port 80.
+[Unit]
+Description=Service Registry API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/cpeddle/service-registry
+Environment="PATH=/home/cpeddle/service-registry/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/cpeddle/service-registry/.venv/bin/uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
