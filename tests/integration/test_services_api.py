@@ -1,13 +1,27 @@
 """The services API: registrations and page edits stored as annotations by identity key."""
 import pytest
+from fastapi import Depends
 from fastapi.testclient import TestClient
 
 from src.api.dependencies.services import get_health_check_service, get_inventory_service
 from src.api.main import app
-from src.models.base import Base, SessionLocal, engine
+from src.models.base import Base, SessionLocal, engine, get_db
 from src.repositories.annotation_repository import AnnotationRepository
 from src.repositories.registration_attempt_repository import RegistrationAttemptRepository
-from src.services.discovery.inventory import AccessPath, Inventory, InventoryRow
+from src.services.discovery import SourceError
+from src.services.discovery.cache import TtlCache
+from src.services.discovery.cgroups import UnitRef
+from src.services.discovery.docker_ports import Container
+from src.services.discovery.firewall import LanFirewall
+from src.services.discovery.inventory import (
+    AccessPath,
+    Inventory,
+    InventoryRow,
+    InventoryService,
+    Sources,
+    collect_snapshot,
+)
+from src.services.discovery.sockets import ListeningSocket, SocketProcess
 
 
 def make_row(key, name, origin):
@@ -138,6 +152,52 @@ def test_registration_matches_unit_compose_service_or_container_name(client, nam
     assert response.status_code == 201
     assert response.json()["identity_key"] == key
     assert response.json()["link_override"] is None
+
+
+def container_inventory(db=Depends(get_db)):
+    """A real inventory of one Compose container, with the annotations from the request."""
+    docker = {("127.0.0.1", 3000): Container("app-app-1", "app", "app")}
+    proxy = SocketProcess("docker-proxy", 50)
+    sources = Sources(
+        list_sockets=lambda: [ListeningSocket("127.0.0.1", 3000, None, (proxy,))],
+        read_cgroup=lambda pid: UnitRef("system", "docker.service", None),
+        list_published_ports=lambda: docker,
+        list_serve_mappings=lambda: [],
+        read_firewall=lambda: LanFirewall(active=True, admitted=()),
+        show_unit=lambda unit, uid=None: SourceError("units", "not expected"),
+    )
+    snapshot = collect_snapshot(sources)
+    return InventoryService(TtlCache(lambda: snapshot), AnnotationRepository(db))
+
+
+def test_renaming_a_container_row_keeps_its_container_name_matching(client, overrides):
+    overrides[get_inventory_service] = container_inventory
+    edit = {"identity_key": "docker:app/app", "display_name": "Clock Me"}
+    assert client.put("/api/services/annotation", json=edit).status_code == 200
+
+    response = client.post(
+        "/api/services",
+        json={**AH_REGISTRATION, "name": "app-app-1", "description": "Time tracking"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["identity_key"] == "docker:app/app"
+    note = stored("docker:app/app")
+    assert (note.display_name, note.description, note.health_path) == (
+        "Clock Me",
+        "Time tracking",
+        "/health",
+    )
+    assert stored("manual:app-app-1") is None
+
+
+def test_a_display_name_is_not_a_registration_name(client, overrides):
+    overrides[get_inventory_service] = container_inventory
+    annotate("docker:app/app", display_name="Clock Me")
+
+    response = client.post("/api/services", json={**AH_REGISTRATION, "name": "Clock Me"})
+
+    assert response.json()["identity_key"] == "manual:Clock Me"
 
 
 def test_registration_falls_back_to_an_existing_annotation(client, overrides):

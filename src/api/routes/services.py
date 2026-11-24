@@ -155,7 +155,7 @@ def _names(row: InventoryRow) -> set[str]:
     if parts.prefix in ("system", "user"):
         return {parts.name}
     if parts.prefix == "docker":
-        return {parts.name, parts.name.rsplit("/", 1)[-1], row.display_name}
+        return {parts.name, parts.name.rsplit("/", 1)[-1], *row.container_names}
     return set()
 
 

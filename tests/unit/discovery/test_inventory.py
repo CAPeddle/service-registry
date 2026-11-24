@@ -129,6 +129,38 @@ def test_docker_proxy_socket_is_attributed_to_its_container_not_docker_service()
     assert row.display_name == "app-app-1"
 
 
+def test_row_keeps_every_container_name_whatever_its_display_name():
+    inventory = inventory_for(
+        [annotation("docker:app/app", display_name="Clock Me")],
+        sockets=[
+            sock("127.0.0.1", 3000, "docker-proxy", 50),
+            sock("127.0.0.1", 3001, "docker-proxy", 51),
+        ],
+        cgroups={50: system("docker.service"), 51: system("docker.service")},
+        docker={
+            ("127.0.0.1", 3000): Container("app-app-1", "app", "app"),
+            ("127.0.0.1", 3001): Container("app-app-2", "app", "app"),
+        },
+    )
+
+    row = inventory.row("docker:app/app")
+    assert row.display_name == "Clock Me"
+    assert row.container_names == {"app-app-1", "app-app-2"}
+
+
+def test_rows_that_are_not_resolved_containers_have_no_container_names():
+    inventory = inventory_for(
+        sockets=[
+            sock("127.0.0.1", 9000, "app", 5),
+            sock("127.0.0.1", 9001, "docker-proxy", 50),
+        ],
+        cgroups={5: system("app.service"), 50: system("docker.service")},
+    )
+
+    assert inventory.row("system:app.service").container_names == frozenset()
+    assert inventory.row("docker-proxy:9001").container_names == frozenset()
+
+
 def test_container_without_compose_labels_is_keyed_by_container_name():
     inventory = inventory_for(
         sockets=[sock("127.0.0.1", 9000, "docker-proxy", 50)],

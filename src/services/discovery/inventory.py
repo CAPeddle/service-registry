@@ -193,6 +193,7 @@ class InventoryRow:
     primary_port: int | None
     health_path: str | None
     link_override: str | None
+    container_names: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -276,6 +277,7 @@ def parse_identity_key(key: str) -> IdentityKeyParts | None:
 class _Draft:
     identity: _Identity
     paths: list[tuple[int, str, str | None]] = field(default_factory=list)
+    container_names: set[str] = field(default_factory=set)
 
 
 def build_inventory(snapshot: SourceSnapshot, annotations: Iterable[Any]) -> Inventory:
@@ -295,6 +297,8 @@ def build_inventory(snapshot: SourceSnapshot, annotations: Iterable[Any]) -> Inv
         identity = context.attribute(socket)
         draft = drafts.setdefault(identity.key, _Draft(identity))
         draft.paths.extend(context.classify(socket, identity))
+        if identity.docker_published:
+            draft.container_names.add(identity.name)
 
     snapshot.resolve_units(_unit_lookups(drafts, by_key, snapshot))
     rows = [_running_row(d, by_key.get(key), snapshot, errors) for key, d in drafts.items()]
@@ -455,6 +459,7 @@ def _running_row(
         primary_port=primary,
         health_path=_annotated(note, "health_path"),
         link_override=_annotated(note, "link_override"),
+        container_names=frozenset(draft.container_names),
     )
 
 
