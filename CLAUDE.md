@@ -33,7 +33,6 @@
 **Key Dependencies:**
 - uvicorn (ASGI server)
 - pytest (testing)
-- alembic (migrations)
 
 **Testing Framework:** pytest
 
@@ -53,7 +52,8 @@ service_registry/
 │   └── core/         # database.py, exceptions
 ├── deploy/           # nginx vhost and systemd unit
 ├── tests/            # Test suite (fixtures in tests/fixtures/z2/)
-└── docs/             # Documentation
+├── docs/             # Documentation
+└── CONCEPTS.md       # shared domain vocabulary (Identity, Annotation, Registration); relevant when orienting to the codebase or discussing the domain
 ```
 
 **Key Components:**
