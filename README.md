@@ -201,15 +201,11 @@ Run these on the Z2.
    sudo ufw allow in on eno1 from 192.168.2.0/24 to any port 80 proto tcp
    ```
 
-3. Update the live checkout in `/home/cpeddle/service-registry`. A plain
-   `git pull` aborts there because of a locally modified `CLAUDE.md` and an
-   untracked copy of the plan file. First confirm `origin/master` contains the
-   merged branch, including the commits that were previously only local. Then:
+3. Update the live checkout in `/home/cpeddle/service-registry`:
 
    ```bash
    cd /home/cpeddle/service-registry
-   git fetch origin && git checkout master && git reset --hard origin/master
-   rm -f src/services/systemd_discovery.py.backup
+   git pull --ff-only origin master
    ```
 
    Untracked files (`service_registry.db`, `.venv`) are not touched.
